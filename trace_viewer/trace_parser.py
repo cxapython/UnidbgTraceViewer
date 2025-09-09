@@ -415,10 +415,13 @@ class TraceParser:
         # 建立倒排索引
         if ev.reads:
             for r in ev.reads.keys():
-                self.reg_read_index.setdefault(r, []).append(idx)
+                # 同时索引 ARM64 的别名（wN/xN 互通）
+                for alias in self._alias_names(r):
+                    self.reg_read_index.setdefault(alias, []).append(idx)
         if ev.writes:
             for r in ev.writes.keys():
-                self.reg_write_index.setdefault(r, []).append(idx)
+                for alias in self._alias_names(r):
+                    self.reg_write_index.setdefault(alias, []).append(idx)
 
     def _apply_writes(self, ev: TraceEvent) -> None:
         # 先用“读取”补全未知寄存器（尽力而为），再用“写入”覆盖
@@ -539,13 +542,14 @@ class TraceParser:
         writer_idx: Optional[int] = None
         if side == '执行后':
             ev = self.events[start_idx]
-            if reg in ev.writes and (ev.writes.get(reg) & 0xFFFFFFFF) == (value_u32 & 0xFFFFFFFF):
+            v_here = self._get_write_value(ev, reg)
+            if v_here is not None and (v_here & 0xFFFFFFFF) == (value_u32 & 0xFFFFFFFF):
                 writer_idx = start_idx
         if writer_idx is None:
             j = self.find_prev_write(reg, start_idx)
             while j is not None:
                 evj = self.events[j]
-                val = evj.writes.get(reg)
+                val = self._get_write_value(evj, reg)
                 if val is not None and (val & 0xFFFFFFFF) == (value_u32 & 0xFFFFFFFF):
                     writer_idx = j
                     break
@@ -587,7 +591,7 @@ class TraceParser:
         k = nxt
         while k is not None:
             evk = self.events[k]
-            valk = evk.writes.get(reg)
+            valk = self._get_write_value(evk, reg)
             if valk is None:
                 break
             if (valk & 0xFFFFFFFF) != (value_u32 & 0xFFFFFFFF):
@@ -668,13 +672,14 @@ class TraceParser:
         writer_idx: Optional[int] = None
         if side == '执行后':
             ev = self.events[start_idx]
-            if reg in ev.writes and (ev.writes.get(reg) & 0xFFFFFFFF) == (value_u32 & 0xFFFFFFFF):
+            v_here = self._get_write_value(ev, reg)
+            if v_here is not None and (v_here & 0xFFFFFFFF) == (value_u32 & 0xFFFFFFFF):
                 writer_idx = start_idx
         if writer_idx is None:
             j = self.find_prev_write(reg, start_idx)
             while j is not None:
                 evj = self.events[j]
-                val = evj.writes.get(reg)
+                val = self._get_write_value(evj, reg)
                 if val is not None and (val & 0xFFFFFFFF) == (value_u32 & 0xFFFFFFFF):
                     writer_idx = j
                     break
@@ -685,7 +690,7 @@ class TraceParser:
         writer_ev = self.events[writer_idx]
         s = writer_ev.asm.lower()
         # 仅在 ldr 写入该寄存器时尝试跨内存回溯
-        if not (s.startswith('ldr') and reg in writer_ev.writes):
+        if not (s.startswith('ldr') and self._has_write(writer_ev, reg)):
             return sorted(base_chain) if base_chain else [writer_idx]
 
         addr = self.effective_address(writer_idx)
@@ -728,8 +733,8 @@ class TraceParser:
 
     def value_chain_from_event(self, reg: str, event_index: int, side: str = '执行前') -> List[int]:
         ev = self.events[event_index]
-        b = ev.reads.get(reg)
-        a = ev.writes.get(reg)
+        b = self._get_read_value(ev, reg)
+        a = self._get_write_value(ev, reg)
         val = None
         if side == '执行后' and a is not None:
             val = a
@@ -770,7 +775,7 @@ class TraceParser:
         # 取起点值（用于定位对应写入点）
         ev0 = self.events[start_idx]
         v_before = ev0.reads.get(reg)
-        v_after = ev0.writes.get(reg)
+        v_after = self._get_write_value(ev0, reg)
         if side == '执行后' and v_after is not None:
             want_val = v_after & 0xFFFFFFFF
         elif v_before is not None:
@@ -786,13 +791,14 @@ class TraceParser:
         # 定位写入该值的定义点
         writer_idx: Optional[int] = None
         if side == '执行后':
-            if reg in ev0.writes and (ev0.writes.get(reg) & 0xFFFFFFFF) == want_val:
+            v_here = self._get_write_value(ev0, reg)
+            if v_here is not None and (v_here & 0xFFFFFFFF) == want_val:
                 writer_idx = start_idx
         if writer_idx is None:
             j = self.find_prev_write(reg, start_idx)
             while j is not None:
                 evj = self.events[j]
-                valj = evj.writes.get(reg)
+                valj = self._get_write_value(evj, reg)
                 if valj is not None and (valj & 0xFFFFFFFF) == want_val:
                     writer_idx = j
                     break
@@ -824,7 +830,7 @@ class TraceParser:
                 continue
 
             # ldr：回溯 store 源
-            if s.startswith('ldr') and cur_reg in ev.writes:
+            if s.startswith('ldr') and self._has_write(ev, cur_reg):
                 addr = self.effective_address(cur_idx)
                 if addr is None:
                     # 地址不可解析，视为叶子
@@ -874,7 +880,7 @@ class TraceParser:
 
         ev0 = self.events[start_idx]
         v_before = ev0.reads.get(reg)
-        v_after = ev0.writes.get(reg)
+        v_after = self._get_write_value(ev0, reg)
         if side == '执行后' and v_after is not None:
             want_val = v_after & 0xFFFFFFFF
         elif v_before is not None:
@@ -888,13 +894,14 @@ class TraceParser:
 
         writer_idx: Optional[int] = None
         if side == '执行后':
-            if reg in ev0.writes and (ev0.writes.get(reg) & 0xFFFFFFFF) == want_val:
+            v_here = self._get_write_value(ev0, reg)
+            if v_here is not None and (v_here & 0xFFFFFFFF) == want_val:
                 writer_idx = start_idx
         if writer_idx is None:
             j = self.find_prev_write(reg, start_idx)
             while j is not None:
                 evj = self.events[j]
-                valj = evj.writes.get(reg)
+                valj = self._get_write_value(evj, reg)
                 if valj is not None and (valj & 0xFFFFFFFF) == want_val:
                     writer_idx = j
                     break
@@ -924,7 +931,7 @@ class TraceParser:
             if self._is_constant_zero_write(ev, cur_reg) or self._is_immediate_write(ev, cur_reg):
                 continue
 
-            if s.startswith('ldr') and cur_reg in ev.writes:
+            if s.startswith('ldr') and self._has_write(ev, cur_reg):
                 addr = self.effective_address(cur_idx)
                 if addr is None:
                     continue
@@ -982,13 +989,13 @@ class TraceParser:
 
         # 找写入该值的定义点
         writer_idx: Optional[int] = None
-        if side == '执行后' and reg in self.events[start_idx].writes and (self.events[start_idx].writes.get(reg) & 0xFFFFFFFF) == (value_u32 & 0xFFFFFFFF):
+        if side == '执行后' and self._has_write(self.events[start_idx], reg) and (self._get_write_value(self.events[start_idx], reg) & 0xFFFFFFFF) == (value_u32 & 0xFFFFFFFF):
             writer_idx = start_idx
         if writer_idx is None:
             j = self.find_prev_write(reg, start_idx)
             while j is not None:
                 evj = self.events[j]
-                valj = evj.writes.get(reg)
+                valj = self._get_write_value(evj, reg)
                 if valj is not None and (valj & 0xFFFFFFFF) == (value_u32 & 0xFFFFFFFF):
                     writer_idx = j
                     break
@@ -1001,7 +1008,7 @@ class TraceParser:
         regs_at = self.reconstruct_regs_at(writer_idx)
 
         # 1) ldr 直接来源：有效地址
-        if s.startswith('ldr') and reg in evw.writes:
+        if s.startswith('ldr') and self._has_write(evw, reg):
             addr = self.effective_address(writer_idx)
             if addr is not None:
                 result['direct'] = f"从内存 0x{addr:08x} 加载"
@@ -1103,7 +1110,7 @@ class TraceParser:
     def _is_load_from_const_memory(self, event_index: int, reg: str) -> bool:
         ev = self.events[event_index]
         s = ev.asm.lower()
-        if not s.startswith('ldr') or reg not in ev.writes:
+        if not s.startswith('ldr') or not self._has_write(ev, reg):
             return False
         addr = self.effective_address(event_index)
         if addr is None:
@@ -1336,7 +1343,11 @@ class TraceParser:
         if n == 0:
             return []
         i0 = max(0, min(start_idx, n - 1))
-        tainted_regs = set((r or '').lower() for r in source_regs)
+        # 初始污点寄存器集合：包含 ARM64 wN/xN 的互为别名
+        tainted_regs: set[str] = set()
+        for r in (source_regs or ()):  # type: ignore[assignment]
+            for a in self._alias_names((r or '').lower()):
+                tainted_regs.add(a)
         tainted_mem = set(int(a) & 0xFFFFFFFF for a in source_mem_addrs)
         hits: List[int] = []
         steps = 0
@@ -1351,10 +1362,16 @@ class TraceParser:
             steps += 1
             used = False
 
-            # 读取命中
+            # 读取命中（考虑别名）
             for r in ev.reads.keys():
                 if r in tainted_regs:
                     used = True
+                    break
+                for a in self._alias_names(r):
+                    if a in tainted_regs:
+                        used = True
+                        break
+                if used:
                     break
 
             # ldr 命中（从污点内存加载）
@@ -1370,8 +1387,9 @@ class TraceParser:
                 for rd in list(ev.writes.keys()):
                     # 0) 特殊恒等归约：将值置零，独立于输入 -> 清洗污点
                     if self._is_constant_zero_write(ev, rd):
-                        if rd in tainted_regs:
-                            tainted_regs.discard(rd)
+                        for a in self._alias_names(rd):
+                            if a in tainted_regs:
+                                tainted_regs.discard(a)
                             used = True
                         # 即使 reads 命中污点，此处也不传播（结果恒定为 0）
                         continue
@@ -1381,6 +1399,12 @@ class TraceParser:
                         if rn in tainted_regs:
                             propagated = True
                             break
+                        for a in self._alias_names(rn):
+                            if a in tainted_regs:
+                                propagated = True
+                                break
+                        if propagated:
+                            break
                     # 2) ldr 从污点内存传播
                     if not propagated and asm.startswith('ldr'):
                         if eff is None:
@@ -1388,14 +1412,16 @@ class TraceParser:
                         if eff is not None and (eff & 0xFFFFFFFF) in tainted_mem:
                             propagated = True
                     if propagated:
-                        if rd not in tainted_regs:
-                            tainted_regs.add(rd)
+                        for a in self._alias_names(rd):
+                            if a not in tainted_regs:
+                                tainted_regs.add(a)
                         used = True
                     else:
                         # 3) 立即数覆盖清洗（不依赖污点输入）
                         if self._is_immediate_write(ev, rd):
-                            if rd in tainted_regs:
-                                tainted_regs.discard(rd)
+                            for a in self._alias_names(rd):
+                                if a in tainted_regs:
+                                    tainted_regs.discard(a)
                                 used = True
 
             # store 传播到内存
@@ -1403,7 +1429,7 @@ class TraceParser:
                 eff2 = self.effective_address(i)
                 if eff2 is not None:
                     src_reg = self._parse_store_value_reg(asm)
-                    if src_reg and src_reg in tainted_regs:
+                    if src_reg and (src_reg in tainted_regs or any(a in tainted_regs for a in self._alias_names(src_reg))):
                         tainted_mem.add(eff2 & 0xFFFFFFFF)
                         used = True
 
@@ -1419,5 +1445,49 @@ class TraceParser:
             seen.add(k)
             ordered.append(k)
         return ordered
+
+    # === 寄存器别名（ARM64）与读写获取 ===
+    def _alias_names(self, name: str) -> List[str]:
+        """返回寄存器名称的别名集合（含自身）。
+        - ARM64: wN/xN 互为别名；其它名称原样返回。
+        """
+        try:
+            n = (name or '').strip().lower()
+            if n.startswith('x') and n[1:].isdigit():
+                return [n, f"w{n[1:]}"]
+            if n.startswith('w') and n[1:].isdigit():
+                return [n, f"x{n[1:]}"]
+            return [n]
+        except Exception:
+            return [name]
+
+    def _has_write(self, ev: TraceEvent, reg: str) -> bool:
+        r = (reg or '').lower()
+        if r in ev.writes:
+            return True
+        for a in self._alias_names(r):
+            if a in ev.writes:
+                return True
+        return False
+
+    def _get_write_value(self, ev: TraceEvent, reg: str) -> Optional[int]:
+        r = (reg or '').lower()
+        v = ev.writes.get(r)
+        if v is not None:
+            return v
+        for a in self._alias_names(r):
+            if a in ev.writes:
+                return ev.writes.get(a)
+        return None
+
+    def _get_read_value(self, ev: TraceEvent, reg: str) -> Optional[int]:
+        r = (reg or '').lower()
+        v = ev.reads.get(r)
+        if v is not None:
+            return v
+        for a in self._alias_names(r):
+            if a in ev.reads:
+                return ev.reads.get(a)
+        return None
 
 
