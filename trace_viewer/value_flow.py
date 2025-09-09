@@ -276,14 +276,20 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         if want_after:
             for idx in (self.parser.reg_write_index.get(reg, []) or []):
                 ev = self.parser.events[idx]
-                a = ev.writes.get(reg)
+                try:
+                    a = self.parser._get_write_value(ev, reg)
+                except Exception:
+                    a = ev.writes.get(reg)
                 if a is not None and (a & 0xFFFFFFFF) == match_val and idx not in seen:
                     candidates.append((idx, ev, ev.reads.get(reg), a))
                     seen.add(idx)
         else:
             for idx in (self.parser.reg_read_index.get(reg, []) or []):
                 ev = self.parser.events[idx]
-                b = ev.reads.get(reg)
+                try:
+                    b = self.parser._get_read_value(ev, reg)
+                except Exception:
+                    b = ev.reads.get(reg)
                 if b is not None and (b & 0xFFFFFFFF) == match_val and idx not in seen:
                     candidates.append((idx, ev, b, ev.writes.get(reg)))
                     seen.add(idx)
@@ -292,9 +298,22 @@ class ValueFlowDock(QtWidgets.QDockWidget):
             QtWidgets.QMessageBox.information(self, '未找到', '当前作用域内未匹配到该值。请检查寄存器名、值或作用域设置。')
             return
 
-        # 选择起点
+        # 选择起点（优先使用主窗口当前行锚点），保证与“右键当前行追踪”一致
         start_idx = None
-        if len(candidates) == 1:
+        # 尝试从主窗口获取当前代码行索引
+        try:
+            parent = self.parent()
+            if hasattr(parent, 'current_event_index'):
+                idx_hint = parent.current_event_index()
+                if isinstance(idx_hint, int):
+                    # 若该行即是候选之一，直接使用它
+                    for i, (cidx, _, _, _) in enumerate(candidates):
+                        if cidx == idx_hint:
+                            start_idx = idx_hint
+                            break
+        except Exception:
+            pass
+        if start_idx is None and len(candidates) == 1:
             start_idx = candidates[0][0]
         else:
             start_idx = self._select_candidate_dialog(reg, match_val, '任意', candidates)
@@ -795,6 +814,15 @@ class ValueFlowDock(QtWidgets.QDockWidget):
             return
         regs, addrs = self._parse_taint_inputs()
         same_call = bool(self.taint_samecall_chk.isChecked())
+        # 若外部窗口提供当前代码区锚点，则优先以该行作为起点
+        try:
+            parent = self.parent()
+            if hasattr(parent, 'current_event_index'):
+                idx = parent.current_event_index()
+                if isinstance(idx, int):
+                    start_idx = idx
+        except Exception:
+            pass
         self._set_busy(True)
         try:
             if hasattr(self, '_taint_worker') and self._taint_worker and self._taint_worker.isRunning():

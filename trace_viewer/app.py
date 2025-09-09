@@ -368,7 +368,14 @@ class TraceViewer(QtWidgets.QMainWindow):
         side_sel = '执行前' if before else '执行后'
         # 从当前事件读取用于追踪的值
         ev = self.parser.events[ev_idx]
-        val = (ev.reads.get(reg) if before else ev.writes.get(reg))
+        try:
+            # 使用解析器的别名感知接口，兼容 ARM64 wN/xN 名称
+            if before:
+                val = self.parser._get_read_value(ev, reg)
+            else:
+                val = self.parser._get_write_value(ev, reg)
+        except Exception:
+            val = (ev.reads.get(reg) if before else ev.writes.get(reg))
         if val is None:
             # 回退老逻辑（无需值时的近似链路）
             chain = self.parser.value_chain_from_event(reg, ev_idx, side_sel)
@@ -426,10 +433,18 @@ class TraceViewer(QtWidgets.QMainWindow):
             # 当前行本身是否就是匹配点（按 side）
             is_match_here = False
             ev_anchor = self.parser.events[anchor_idx]
-            if side == '执行后':
-                is_match_here = (reg in ev_anchor.writes and (ev_anchor.writes.get(reg) & 0xFFFFFFFF) == match_val)
-            else:
-                is_match_here = (reg in ev_anchor.reads and (ev_anchor.reads.get(reg) & 0xFFFFFFFF) == match_val)
+            try:
+                if side == '执行后':
+                    av = self.parser._get_write_value(ev_anchor, reg)
+                    is_match_here = (av is not None and (av & 0xFFFFFFFF) == match_val)
+                else:
+                    bv = self.parser._get_read_value(ev_anchor, reg)
+                    is_match_here = (bv is not None and (bv & 0xFFFFFFFF) == match_val)
+            except Exception:
+                if side == '执行后':
+                    is_match_here = (reg in ev_anchor.writes and (ev_anchor.writes.get(reg) & 0xFFFFFFFF) == match_val)
+                else:
+                    is_match_here = (reg in ev_anchor.reads and (ev_anchor.reads.get(reg) & 0xFFFFFFFF) == match_val)
             if is_match_here:
                 # 直接以当前行为起点展示链路
                 chain = self.parser.build_value_chain_phase1(reg, anchor_idx, match_val, side or '执行前')
@@ -624,6 +639,18 @@ class TraceViewer(QtWidgets.QMainWindow):
             pass
         self._regs_worker = None
 
+    # 对外提供当前代码区锚点事件索引，便于外部（如值流面板）作为分析起点
+    def current_event_index(self) -> Optional[int]:
+        if not self.parser or not hasattr(self, '_current_code_start'):
+            return None
+        try:
+            row = int(getattr(self, '_current_code_row', 0) or 0)
+            idx = int(self._current_code_start) + row
+            idx = max(0, min(idx, len(self.parser.events) - 1))
+            return idx
+        except Exception:
+            return None
+
     def _render_chain_list(self, reg: str, chain: list) -> None:
         if not self.parser:
             return
@@ -631,8 +658,12 @@ class TraceViewer(QtWidgets.QMainWindow):
         for idx in chain:
             ev = self.parser.events[idx]
             # 使用事件自带 reads/writes 提高速度，同时寄存器面板在跳转时会展示完整 before/after
-            b = ev.reads.get(reg)
-            a = ev.writes.get(reg)
+            try:
+                b = self.parser._get_read_value(ev, reg)
+                a = self.parser._get_write_value(ev, reg)
+            except Exception:
+                b = ev.reads.get(reg)
+                a = ev.writes.get(reg)
             rw = 'W' if reg in ev.writes else ('R' if reg in ev.reads else '')
             item = QtWidgets.QTreeWidgetItem([
                 str(ev.line_no), f"0x{ev.pc:08x}", rw, ev.asm,
