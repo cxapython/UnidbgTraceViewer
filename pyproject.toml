@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unidbg-trace-tools"
+version = "0.2.0"
+description = "Unidbg trace viewer and taint analysis tools with forward propagation"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "PyQt5>=5.15.2",
+    "typing-extensions>=4.0.0; python_version<'3.10'",
+]
+authors = [
+    {name = "UnidbgTraceViewer Team", email = "dev@example.com"}
+]
+keywords = ["unidbg", "trace", "analysis", "taint", "reverse-engineering", "arm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Security",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+[project.scripts]
+trace-viewer = "trace_viewer.app:main"
