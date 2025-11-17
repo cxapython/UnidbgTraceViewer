@@ -6,7 +6,7 @@ import signal
 import logging
 from typing import Optional
 
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 # 支持包内导入与脚本直接运行两种方式
 try:
@@ -73,9 +73,9 @@ class TraceViewer(QtWidgets.QMainWindow):
         self.func_list = QtWidgets.QTreeWidget()
         self.func_list.setHeaderLabels(['地址', '函数名'])
         self.func_list.setColumnWidth(0, 160)
-        self.func_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.func_list.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.func_list.setAlternatingRowColors(True)
-        self.func_list.setContextMenuPolicy(QtCore.Qt.DefaultContextMenu)
+        self.func_list.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.DefaultContextMenu)
         # 深色风格：函数列表
         self.func_list.setStyleSheet(
             "QTreeWidget{background:#0e1621;color:#cdd6f4;alternate-background-color:#0b1220;"
@@ -87,14 +87,14 @@ class TraceViewer(QtWidgets.QMainWindow):
         # 右侧：代码 + 寄存器（使用增强的代码视图）
         self.code_edit = EnhancedCodeEdit()
         # 配置：use_emoji=True 使用emoji图标，use_emoji=False 使用ASCII图标
-        self.code_formatter = EnhancedCodeFormatter(use_emoji=True)  # 改为True启用emoji
+        self.code_formatter = EnhancedCodeFormatter(use_emoji=True)  # Qt6支持emoji更好
         self.reg_analyzer = RegisterAnalyzer()  # 智能寄存器分析器
         self.reg_table = QtWidgets.QTableWidget(0, 5)  # 增加列：用途、趋势
         self.reg_table.setHorizontalHeaderLabels(['寄存器', '之前', '之后', '用途', '趋势'])
         self.reg_table.horizontalHeader().setStretchLastSection(True)
-        self.reg_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.reg_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.reg_table.setContextMenuPolicy(QtCore.Qt.DefaultContextMenu)
+        self.reg_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.reg_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.reg_table.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.DefaultContextMenu)
         self.reg_table.setStyleSheet(
             "QTableWidget{background:#0e1621;color:#cdd6f4;gridline-color:#223042;}"
             "QHeaderView::section{background:#0b1220;color:#93a4c3;padding:4px;border:1px solid #1f2a3a;}"
@@ -221,7 +221,7 @@ class TraceViewer(QtWidgets.QMainWindow):
             pass
 
     def _on_func_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
-        addr = item.data(0, QtCore.Qt.UserRole)
+        addr = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
         if isinstance(addr, int):
             self._jump_to_address(addr)
 
@@ -400,7 +400,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         if 0 <= row < self.reg_table.rowCount():
             item = self.reg_table.item(row, 0)
             if item:
-                self.reg_table.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
+                self.reg_table.scrollToItem(item, QtWidgets.QAbstractItemView.ScrollHint.PositionAtCenter)
 
     def _highlight_code_line(self, row_idx: int) -> None:
         """高亮代码窗口中的某一行。
@@ -519,7 +519,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         dlg.resize(500, 250)
         
         # 显示对话框
-        if dlg.exec_() != QtWidgets.QDialog.Accepted:
+        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         
         # 获取用户输入
@@ -698,21 +698,21 @@ class TraceViewer(QtWidgets.QMainWindow):
                     '' if a is None else f"0x{a:08x}",
                     str(getattr(ev, 'call_id', 0)),
                 ])
-                item.setData(0, QtCore.Qt.UserRole, idx)
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
                 tv.addTopLevelItem(item)
-            tv.itemDoubleClicked.connect(lambda it, col: (setattr(dlg, '_sel', it.data(0, QtCore.Qt.UserRole)), dlg.accept()))
+            tv.itemDoubleClicked.connect(lambda it, col: (setattr(dlg, '_sel', it.data(0, QtCore.Qt.ItemDataRole.UserRole)), dlg.accept()))
             lay.addWidget(tv)
             btns = QtWidgets.QHBoxLayout()
             okb = QtWidgets.QPushButton('确定')
             cancel = QtWidgets.QPushButton('取消')
-            okb.clicked.connect(lambda: (setattr(dlg, '_sel', tv.currentItem().data(0, QtCore.Qt.UserRole) if tv.currentItem() else None), dlg.accept()))
+            okb.clicked.connect(lambda: (setattr(dlg, '_sel', tv.currentItem().data(0, QtCore.Qt.ItemDataRole.UserRole) if tv.currentItem() else None), dlg.accept()))
             cancel.clicked.connect(dlg.reject)
             btns.addStretch(1)
             btns.addWidget(okb)
             btns.addWidget(cancel)
             lay.addLayout(btns)
             dlg.resize(760, 460)
-            if dlg.exec_() != QtWidgets.QDialog.Accepted:
+            if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
                 return
             start_idx = getattr(dlg, '_sel', None)
             if not isinstance(start_idx, int):
@@ -823,7 +823,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         btns.addWidget(btn_save)
         lay.addLayout(btns)
         dlg.resize(760, 560)
-        dlg.exec_()
+        dlg.exec()
 
     # =========== 异步寄存器复原，避免 UI 卡顿 ==========
     def _rebuild_regs_async(self, ev_idx: int) -> None:
@@ -1160,7 +1160,7 @@ def main() -> int:
     path = sys.argv[1] if len(sys.argv) >= 2 else None
     w = TraceViewer(path)
     w.show()
-    return app.exec_()
+    return app.exec()
 
 
 if __name__ == '__main__':

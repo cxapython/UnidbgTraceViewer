@@ -10,7 +10,7 @@
 """
 
 from typing import Optional, Dict, List, Tuple
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 
 class MemoryViewerDock(QtWidgets.QDockWidget):

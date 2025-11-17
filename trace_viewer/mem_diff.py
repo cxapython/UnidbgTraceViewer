@@ -1,5 +1,5 @@
 from typing import Optional, Tuple
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 
 class MemoryDiffDock(QtWidgets.QDockWidget):

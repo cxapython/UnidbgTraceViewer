@@ -10,7 +10,7 @@
 
 import re
 from typing import Optional, Dict, List, Tuple
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 
 class InstructionAnalyzer:
@@ -231,7 +231,7 @@ class EnhancedCodeEdit(QtWidgets.QPlainTextEdit):
             'Consolas',        # Windows 等宽字体
             'DejaVu Sans Mono' # Linux 等宽字体
         ]
-        fams = set(QtGui.QFontDatabase().families())
+        fams = set(QtGui.QFontDatabase.families())
         font_name = next((n for n in font_candidates if n in fams), 'Monospace')
         font = QtGui.QFont(font_name, 10)
         self.setFont(font)

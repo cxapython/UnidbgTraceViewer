@@ -1,6 +1,8 @@
+import re
+import time
 from typing import List, Tuple, Optional, Dict
 from collections import OrderedDict
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 
 class ValueFlowDock(QtWidgets.QDockWidget):
@@ -345,7 +347,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                 ev.asm,
                 regs_str
             ])
-            item.setData(0, QtCore.Qt.UserRole, idx)
+            item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
             tv.addTopLevelItem(item)
         
         # 默认选中第一个
@@ -357,7 +359,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
             cur = tv.currentItem()
             if cur and self.parent():
                 try:
-                    idx = cur.data(0, QtCore.Qt.UserRole)
+                    idx = cur.data(0, QtCore.Qt.ItemDataRole.UserRole)
                     main_window = self.parent()
                     # 调用主窗口的寄存器复原方法
                     if hasattr(main_window, '_rebuild_regs_async'):
@@ -373,7 +375,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         
         # 双击确认
         def _on_double(it, col):
-            dlg._sel = it.data(0, QtCore.Qt.UserRole)
+            dlg._sel = it.data(0, QtCore.Qt.ItemDataRole.UserRole)
             dlg.accept()
         tv.itemDoubleClicked.connect(_on_double)
         lay.addWidget(tv)
@@ -386,7 +388,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         def _on_ok():
             cur = tv.currentItem()
             if cur:
-                dlg._sel = cur.data(0, QtCore.Qt.UserRole)
+                dlg._sel = cur.data(0, QtCore.Qt.ItemDataRole.UserRole)
                 dlg.accept()
         
         okb.clicked.connect(_on_ok)
@@ -399,7 +401,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         dlg.resize(1000, 500)
         dlg._sel = None
         
-        if dlg.exec_() == QtWidgets.QDialog.Accepted:
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             return dlg._sel
         return None
 
@@ -464,7 +466,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                     self._fmt_low8(reg, idx), 
                     self._fmt_c_summary(ev.asm)
                 ])
-                item.setData(0, QtCore.Qt.UserRole, idx)
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
                 
                 # 源头行高亮（可选）
                 if term_reason:
@@ -494,7 +496,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         sel = self.list.selectedItems()
         start_idx = 0
         if sel:
-            maybe = sel[0].data(0, QtCore.Qt.UserRole)
+            maybe = sel[0].data(0, QtCore.Qt.ItemDataRole.UserRole)
             if isinstance(maybe, int):
                 start_idx = maybe
         self._run_taint(start_idx=start_idx)
@@ -540,7 +542,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                     str(getattr(ev, 'call_id', 0)),
                     low8, bitops
                 ])
-                item.setData(0, QtCore.Qt.UserRole, idx)
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
                 self.list.addTopLevelItem(item)
 
     def _search_memory(self, addr_range: Tuple[int, int], in_scope_fn) -> None:
@@ -570,7 +572,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                     '' if fa is None else f"0x{fa:08x}",
                     str(getattr(ev, 'call_id', 0)), low8, bitops
                 ])
-                item.setData(0, QtCore.Qt.UserRole, idx)
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
                 self.list.addTopLevelItem(item)
 
     # 保留占位，避免旧调用；当前不再使用作用域筛选
@@ -578,12 +580,11 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         return lambda ev: True
 
     def _on_double(self, item: QtWidgets.QTreeWidgetItem, col: int) -> None:
-        idx = item.data(0, QtCore.Qt.UserRole)
+        idx = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
         if not isinstance(idx, int):
             return
         # 简单节流：两次跳转间隔 >= 80ms
-        import time as _t
-        now = _t.perf_counter()
+        now = time.perf_counter()
         if now - getattr(self, '_last_jump_ts', 0.0) < 0.08:
             return
         self._last_jump_ts = now
@@ -847,7 +848,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                     str(getattr(ev, 'call_id', 0)),
                     self._fmt_low8(reg, idx), self._fmt_c_summary(ev.asm)
                 ])
-                item.setData(0, QtCore.Qt.UserRole, idx)
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
                 self.list.addTopLevelItem(item)
         finally:
             self.list.setUpdatesEnabled(True)
@@ -937,7 +938,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
             return
         pairs = []  # (idx, item)
         for it in sel:
-            idx = it.data(0, QtCore.Qt.UserRole)
+            idx = it.data(0, QtCore.Qt.ItemDataRole.UserRole)
             if isinstance(idx, int):
                 pairs.append((idx, it))
         pairs.sort(key=lambda x: x[0])
@@ -956,7 +957,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         if not self.parser:
             return
         sel = self.list.selectedItems()
-        indices = [it.data(0, QtCore.Qt.UserRole) for it in sel if isinstance(it.data(0, QtCore.Qt.UserRole), int)]
+        indices = [it.data(0, QtCore.Qt.ItemDataRole.UserRole) for it in sel if isinstance(it.data(0, QtCore.Qt.ItemDataRole.UserRole), int)]
         if not indices:
             QtWidgets.QMessageBox.information(self, '提示', '请在结果列表中选择若干行再导出')
             return
@@ -988,7 +989,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         if not sel:
             return
         it = sel[0]
-        idx = it.data(0, QtCore.Qt.UserRole)
+        idx = it.data(0, QtCore.Qt.ItemDataRole.UserRole)
         if not isinstance(idx, int):
             return
         self._run_taint(start_idx=idx)
@@ -997,7 +998,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         sel = self.list.selectedItems()
         start_idx = 0
         if sel:
-            maybe = sel[0].data(0, QtCore.Qt.UserRole)
+            maybe = sel[0].data(0, QtCore.Qt.ItemDataRole.UserRole)
             if isinstance(maybe, int):
                 start_idx = maybe
         self._run_taint(start_idx=start_idx)
@@ -1008,7 +1009,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
             return
         sel = self.list.selectedItems()
         if sel:
-            idx = sel[0].data(0, QtCore.Qt.UserRole)
+            idx = sel[0].data(0, QtCore.Qt.ItemDataRole.UserRole)
         else:
             idx = 0
         if not isinstance(idx, int):
@@ -1056,7 +1057,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         btns.addWidget(btn_save)
         lay.addLayout(btns)
         dlg.resize(760, 560)
-        dlg.exec_()
+        dlg.exec()
 
     @QtCore.pyqtSlot(list, list, str)
     def _on_provenance_ready(self, nodes_edges_reg: list, edges: list = None, reg: str = '') -> None:
@@ -1092,14 +1093,14 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                     str(getattr(ev, 'call_id', 0)),
                     self._fmt_low8(reg, idx), self._fmt_c_summary(ev.asm)
                 ])
-                item.setData(0, QtCore.Qt.UserRole, idx)
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
                 self.list.addTopLevelItem(item)
             # 改为导出“当前列表中所有行”的原始 trace 文本
             try:
                 idxs = []
                 for i in range(self.list.topLevelItemCount()):
                     it = self.list.topLevelItem(i)
-                    v = it.data(0, QtCore.Qt.UserRole)
+                    v = it.data(0, QtCore.Qt.ItemDataRole.UserRole)
                     if isinstance(v, int):
                         idxs.append(v)
                 txt = self._build_trace_text(idxs)
@@ -1289,7 +1290,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                     str(ev.line_no), f"0x{ev.pc:08x}", rw, tag, ev.asm,
                     '', '', str(getattr(ev, 'call_id', 0)), self._fmt_low8(None, idx), self._fmt_c_summary(ev.asm)
                 ])
-                item.setData(0, QtCore.Qt.UserRole, idx)
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
                 self.list.addTopLevelItem(item)
         finally:
             self.list.setUpdatesEnabled(True)
@@ -1348,7 +1349,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                     '', '', str(getattr(ev, 'call_id', 0)), 
                     self._fmt_low8(None, idx), self._fmt_c_summary(ev.asm)
                 ])
-                item.setData(0, QtCore.Qt.UserRole, idx)
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
                 
                 # 汇合点用特殊颜色高亮
                 if idx in confluence_points:
@@ -1388,7 +1389,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         btns.addWidget(btn_save)
         lay.addLayout(btns)
         dlg.resize(760, 560)
-        dlg.exec_()
+        dlg.exec()
 
     def _gen_c_code(self, indices: list) -> str:
         used_regs = set()
@@ -1576,7 +1577,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         if not self.parser:
             return
         sel = self.list.selectedItems()
-        indices = [it.data(0, QtCore.Qt.UserRole) for it in sel if isinstance(it.data(0, QtCore.Qt.UserRole), int)]
+        indices = [it.data(0, QtCore.Qt.ItemDataRole.UserRole) for it in sel if isinstance(it.data(0, QtCore.Qt.ItemDataRole.UserRole), int)]
         if not indices:
             QtWidgets.QMessageBox.information(self, '提示', '请在结果列表中选择若干行再导出')
             return
@@ -1636,13 +1637,13 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         btns.addWidget(btn_save)
         lay.addLayout(btns)
         dlg.resize(760, 560)
-        dlg.exec_()
+        dlg.exec()
 
     def _on_export_py(self) -> None:
         if not self.parser:
             return
         sel = self.list.selectedItems()
-        indices = [it.data(0, QtCore.Qt.UserRole) for it in sel if isinstance(it.data(0, QtCore.Qt.UserRole), int)]
+        indices = [it.data(0, QtCore.Qt.ItemDataRole.UserRole) for it in sel if isinstance(it.data(0, QtCore.Qt.ItemDataRole.UserRole), int)]
         if not indices:
             QtWidgets.QMessageBox.information(self, '提示', '请在结果列表中选择若干行再导出')
             return
@@ -1713,12 +1714,11 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         btns.addWidget(btn_save)
         lay.addLayout(btns)
         dlg.resize(760, 560)
-        dlg.exec_()
+        dlg.exec()
 
     def _bitop_py_stmt(self, asm: str) -> str:
         s = asm.strip(); low = s.lower()
-        import re as _re
-        m = _re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)(?:\s*,\s*(.+))?$", low)
+        m = re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)(?:\s*,\s*(.+))?$", low)
         if not m:
             if low.startswith('mov '):
                 try:
@@ -1839,8 +1839,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         low = s.lower()
         # 通用三段式解析：op rd, rn, rm/operand2
         m = None
-        import re as _re
-        m = _re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)(?:\s*,\s*(.+))?$", low)
+        m = re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)(?:\s*,\s*(.+))?$", low)
         if not m:
             if low.startswith('mvn'):
                 # mvn rd, rn 亦有两参形式；尽量保留原文
@@ -1886,8 +1885,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         """
         s = asm.strip()
         low = s.lower()
-        import re as _re
-        m = _re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)(?:\s*,\s*(.+))?$", low)
+        m = re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)(?:\s*,\s*(.+))?$", low)
         if not m:
             # 两参形式：mov/mvn/单目
             if low.startswith('mov '):
@@ -2029,9 +2027,8 @@ class ChainWorker(QtCore.QThread):
         self._deadline_ms = 300  # 构链时间预算，超时提前返回
 
     def run(self) -> None:
-        # 带时间预算的构链：优先使用“第一阶段（内存感知）”，仅发一次结果
-        import time as _t
-        t0 = _t.perf_counter()
+        # 带时间预算的构链：优先使用"第一阶段（内存感知）"，仅发一次结果
+        t0 = time.perf_counter()
         indices: list[int] = []
         try:
             prelim = self._parser.build_value_chain_phase1(self._reg, self._start_idx, self._match_val, self._side)

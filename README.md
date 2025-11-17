@@ -3,7 +3,7 @@
 > 强大的 Unidbg Trace 可视化分析工具
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
-[![PyQt5](https://img.shields.io/badge/PyQt5-5.15.2%2B-green)](https://www.riverbankcomputing.com/software/pyqt/)
+[![PyQt6](https://img.shields.io/badge/PyQt6-6.4.0%2B-green)](https://www.riverbankcomputing.com/software/pyqt/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## 📸 界面预览
@@ -22,6 +22,8 @@
 
 ### 📊 可视化分析
 
+- **增强代码面板** 🆕：行号显示 + 内联寄存器值 + 操作类型图标（📥加载 📤存储 ⚡逻辑 ➕算术等）
+- **智能寄存器分析** 🆕：自动识别用途（📍指针 📏索引 🔑密钥）和趋势（↗递增 →常量 ↕变化）
 - **三联动视图**：函数列表 / 代码窗口 / 寄存器窗口
 - **内存写入对比**：字节级差异高亮显示
 - **智能跳转**：代码、函数、地址一键定位
@@ -223,7 +225,7 @@ print(f"到达目标: {result['target_reached']}")
 ## 🛠️ 系统要求
 
 - Python ≥ 3.8
-- PyQt5 ≥ 5.15.2
+- PyQt6 ≥ 6.4.0
 - 支持平台：Windows / macOS / Linux
 
 ## 📊 性能特点
@@ -235,14 +237,8 @@ print(f"到达目标: {result['target_reached']}")
 
 ## 📚 详细文档
 
-### 🎯 用户指南
-- **[完整用户指南](docs/USER_GUIDE.md)** - 所有功能详解
-- **[算法还原实战指南](ALGORITHM_RECONSTRUCTION_GUIDE.md)** 🔥 - 从trace还原算法的完整流程
-- **[增强UI功能说明](ENHANCED_UI_FEATURES.md)** 🆕 - 行号、寄存器分析、内存查看器
-
-### 🔧 开发文档
+- **[完整用户指南](docs/USER_GUIDE.md)** - 所有功能详解、算法还原实战、增强功能使用
 - **[开发者笔记](docs/DEVELOPER_NOTES.md)** - 架构设计和技术细节
-- **[文档索引](docs/README.md)** - 快速导航
 
 ## 🐛 常见问题
 
@@ -266,23 +262,23 @@ A:
 
 ## 📝 版本历史
 
+### v0.4.0 (2025-11-17)
+- ⬆️ 升级到 PyQt6（更好的 emoji 支持）
+- ✨ 增强代码面板：行号、内联寄存器值、操作类型图标、鼠标悬停提示
+- ✨ 智能寄存器分析：自动识别用途（指针/索引/密钥）和趋势（递增/常量/变化）
+- 🎨 代码优化：import 统一放到文件顶部
+- 📖 文档整合：从8个md整合到3个核心文档
+
 ### v0.3.1 (2025-10-30)
 - ✨ 右键追踪改为输入对话框，支持手动指定寄存器和值
 - ✨ 候选窗口显示所有寄存器值，支持实时联动
 - 🐛 修复值匹配逻辑，精确查找 PC+寄存器+值
 - 🎨 移除冗余的"调用#"列，界面更简洁
-- 📖 文档更新和整理
 
 ### v0.3.0 (2025-10-29)
 - ✨ 新增扩展 ARM32 指令支持
 - 🚀 位图优化，内存占用减少 96%
 - ✅ 指令覆盖率达到 98%+
-- 📖 完整的测试用例和文档
-
-### v0.2.0
-- ✨ 高级污点前向分析
-- 🎯 目标导向分析
-- 📊 详细统计信息
 
 ## 🤝 贡献
 

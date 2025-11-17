@@ -138,8 +138,7 @@ class TraceParser:
 
         # 常规解析；为避免写库导致卡顿，默认不写缓存。
         # 如需构建缓存，请设置环境变量 TRACE_CACHE_BUILD=1
-        import os as _os
-        build_cache = bool(_os.environ.get('TRACE_CACHE_BUILD') == '1')
+        build_cache = bool(os.environ.get('TRACE_CACHE_BUILD') == '1')
         if not build_cache:
             cache = None
 
@@ -704,8 +703,7 @@ class TraceParser:
         s = asm.strip().lower()
         if not s.startswith('str'):
             return None
-        import re as _re
-        m = _re.match(r"^str\w*\s+([rxw][0-9]{1,2})\s*,\s*\[", s)
+        m = re.match(r"^str\w*\s+([rxw][0-9]{1,2})\s*,\s*\[", s)
         if not m:
             return None
         return m.group(1)
@@ -1161,11 +1159,10 @@ class TraceParser:
         if reg not in ev.writes:
             return False
         s = ev.asm.lower().strip()
-        import re as _re
         # 通用二参：op rd, rn
-        m2 = _re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)$", s)
+        m2 = re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)$", s)
         # 通用三参：op rd, rn, rm/operand2
-        m3 = _re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)\s*,\s*(.+)$", s)
+        m3 = re.match(r"^(\w+)\s+(\w+)\s*,\s*([^,]+)\s*,\s*(.+)$", s)
 
         def _is_zero_imm(txt: str) -> bool:
             t = txt.replace('#', '').strip()
@@ -1214,7 +1211,6 @@ class TraceParser:
         lst = self.store_addr_index.get(addr)
         if not lst:
             return True
-        from bisect import bisect_left
         pos = bisect_left(lst, event_index) - 1
         return pos < 0
 
@@ -1298,9 +1294,8 @@ class TraceParser:
     def _is_conditional_op(self, asm: str) -> bool:
         """判断是否为条件执行指令（带条件后缀的指令）"""
         s = asm.lower().strip()
-        import re as _re
         # 匹配指令助记符后跟条件码：如 addeq, movne, streq 等
-        m = _re.match(r'^([a-z]+)(eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)\s', s)
+        m = re.match(r'^([a-z]+)(eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)\s', s)
         return m is not None
 
     def _is_partial_bitfield_clear(self, ev: TraceEvent, reg: str) -> bool:
@@ -1333,7 +1328,6 @@ class TraceParser:
         
         返回展开后的寄存器列表，如 ['r0', 'r1', 'r2', ...]
         """
-        import re as _re
         s = asm.lower().strip()
         
         # 提取花括号内的内容
@@ -1350,7 +1344,7 @@ class TraceParser:
             
             # 处理范围：r0-r7, x0-x3 等
             if '-' in part:
-                range_match = _re.match(r'([rxw])(\d+)-([rxw])(\d+)', part)
+                range_match = re.match(r'([rxw])(\d+)-([rxw])(\d+)', part)
                 if range_match:
                     prefix = range_match.group(1)
                     start = int(range_match.group(2))
@@ -1362,7 +1356,7 @@ class TraceParser:
                 if part in ('r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9',
                            'r10', 'r11', 'r12', 'r13', 'r14', 'r15',
                            'sp', 'lr', 'pc', 'cpsr') or \
-                   _re.match(r'^[xw]\d{1,2}$', part):
+                   re.match(r'^[xw]\d{1,2}$', part):
                     regs.append(part)
         
         return regs
@@ -1376,11 +1370,10 @@ class TraceParser:
         
         返回 (reg1, reg2) 或 (None, None) 如果解析失败
         """
-        import re as _re
         s = asm.lower().strip()
         
         # 匹配 strd/ldrd rd1, rd2, [...]
-        m = _re.match(r'^(strd|ldrd)\s+([rxw]\d{1,2})\s*,\s*([rxw]\d{1,2})\s*,\s*\[', s)
+        m = re.match(r'^(strd|ldrd)\s+([rxw]\d{1,2})\s*,\s*([rxw]\d{1,2})\s*,\s*\[', s)
         if m:
             return (m.group(2), m.group(3))
         
@@ -1424,10 +1417,9 @@ class TraceParser:
         格式：csel xd, xn, xm, cond
         返回：(xd, xn, xm)
         """
-        import re as _re
         s = asm.lower().strip()
         # 匹配: csel/csinc/csinv/csneg xd, xn, xm, cond
-        m = _re.match(r'^cs(?:el|inc|inv|neg)\s+([xw]\d+)\s*,\s*([xw]\d+)\s*,\s*([xw]\d+)\s*,', s)
+        m = re.match(r'^cs(?:el|inc|inv|neg)\s+([xw]\d+)\s*,\s*([xw]\d+)\s*,\s*([xw]\d+)\s*,', s)
         if m:
             return (m.group(1), m.group(2), m.group(3))
         return (None, None, None)
@@ -1462,10 +1454,9 @@ class TraceParser:
         格式：madd xd, xn, xm, xa
         返回：(xd, xn, xm, xa)
         """
-        import re as _re
         s = asm.lower().strip()
         # 匹配: madd/msub/smaddl等 xd, xn, xm, xa
-        m = _re.match(r'^[smu]*[madd|msub|maddl|msubl]+\s+([xw]\d+)\s*,\s*([xw]\d+)\s*,\s*([xw]\d+)\s*,\s*([xw]\d+)', s)
+        m = re.match(r'^[smu]*[madd|msub|maddl|msubl]+\s+([xw]\d+)\s*,\s*([xw]\d+)\s*,\s*([xw]\d+)\s*,\s*([xw]\d+)', s)
         if m:
             return (m.group(1), m.group(2), m.group(3), m.group(4))
         return (None, None, None, None)
@@ -1637,7 +1628,6 @@ class TraceParser:
             index = None
             shift = 0
             imm = 0
-            import re as _re
             # 1) 提取 base 与剩余
             parts = [p.strip() for p in expr.split(',')]
             if len(parts) >= 1:

@@ -1,5 +1,5 @@
 import re
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 
 class ClickableCodeEdit(QtWidgets.QPlainTextEdit):
@@ -13,12 +13,12 @@ class ClickableCodeEdit(QtWidgets.QPlainTextEdit):
         self.setReadOnly(True)
         # 字体候选（按可用性降级）
         candidates = ['JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', 'Courier New']
-        fams = set(QtGui.QFontDatabase().families())
+        fams = set(QtGui.QFontDatabase.families())
         font_name = next((n for n in candidates if n in fams), 'Monospace')
         self.setFont(QtGui.QFont(font_name, 12))
         self._addr_re = re.compile(r"0x[0-9a-fA-F]+")
         # 支持复制
-        self.setContextMenuPolicy(QtCore.Qt.DefaultContextMenu)
+        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.DefaultContextMenu)
         # 文档边距，避免文本贴边
         self.document().setDocumentMargin(12)
         # 记录按下位置，用于区分点击与拖拽选择
