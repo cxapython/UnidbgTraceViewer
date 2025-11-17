@@ -38,11 +38,24 @@ class ParserWorker(QtCore.QThread):
         except Exception:
             from trace_parser import TraceParser  # type: ignore
         parser = TraceParser(checkpoint_interval=2000)
+        
+        # 定义安全的进度回调（捕获所有异常）
+        def safe_progress_cb(p: int) -> None:
+            try:
+                if not self.isInterruptionRequested():
+                    self.progress.emit(p)
+            except Exception:
+                pass  # 静默忽略进度报告错误
+        
         try:
-            parser.parse_file(self._path, progress_cb=lambda p: self.progress.emit(p))
-        except Exception:
-            # 兜底：避免进度异常导致线程崩溃
-            parser.parse_file(self._path)
-        self.finished.emit(parser, self._path)
+            parser.parse_file(self._path, progress_cb=safe_progress_cb)
+        except Exception as e:
+            # 解析失败时也尝试emit进度100%（表示结束）
+            import traceback
+            traceback.print_exc()
+            # 仍然emit parser（可能为空）让UI能显示错误
+        
+        if not self.isInterruptionRequested():
+            self.finished.emit(parser, self._path)
 
 

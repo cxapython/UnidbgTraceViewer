@@ -151,15 +151,25 @@ class TraceParser:
             total_size = 0
         bytes_read = 0
         last_pct = -1
+        
+        # 立即报告0%，让用户知道开始解析了
+        if progress_cb:
+            try:
+                progress_cb(0)
+            except Exception:
+                pass
+        
         with open(path, 'r', encoding='utf-8', errors='ignore') as f:
             for i, line in enumerate(f, start=1):
                 line = line.rstrip('\n')
                 # 进度按字节估算，减少二次扫描开销
+                # 使用简单的字符长度估算（ASCII约等于字节，中文按3倍计算更准确但开销大，这里用1:1近似）
                 try:
                     bytes_read += len(line) + 1
-                    if progress_cb and total_size > 0:
+                    # 每处理100行才检查一次进度，减少回调开销
+                    if progress_cb and total_size > 0 and i % 100 == 0:
                         pct = int((bytes_read * 100) / total_size)
-                        if pct != last_pct and (pct == 100 or pct - last_pct >= 1):
+                        if pct != last_pct:
                             last_pct = pct
                             progress_cb(pct)
                 except Exception:
@@ -190,6 +200,14 @@ class TraceParser:
                 # checkpoint_interval=2000，但commit_interval=10000
                 if cache is not None and i % 10000 == 0:
                     cache.commit()
+        
+        # 解析完成，报告100%
+        if progress_cb:
+            try:
+                progress_cb(100)
+            except Exception:
+                pass
+        
         # 解析完成后，预计算 ldr/str 的有效地址并构建 store_addr 索引
         self._precompute_memory_effects()
         if cache is not None:
