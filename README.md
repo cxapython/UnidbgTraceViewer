@@ -235,10 +235,14 @@ print(f"到达目标: {result['target_reached']}")
 
 ## 📚 详细文档
 
-- **[快速入门指南](docs/QUICK_START.md)** - 5分钟快速上手基础操作
-- **[污点分析教程](docs/TAINT_ANALYSIS.md)** - 双模式污点分析完整指南
-- **[增强污点分析](ENHANCED_TAINT_SUMMARY.md)** 🆕 - 字节级 + 标签系统 + 汇合点检测
-- **[文档索引](docs/README.md)** - 所有文档汇总与导航
+### 🎯 用户指南
+- **[完整用户指南](docs/USER_GUIDE.md)** - 所有功能详解
+- **[算法还原实战指南](ALGORITHM_RECONSTRUCTION_GUIDE.md)** 🔥 - 从trace还原算法的完整流程
+- **[增强UI功能说明](ENHANCED_UI_FEATURES.md)** 🆕 - 行号、寄存器分析、内存查看器
+
+### 🔧 开发文档
+- **[开发者笔记](docs/DEVELOPER_NOTES.md)** - 架构设计和技术细节
+- **[文档索引](docs/README.md)** - 快速导航
 
 ## 🐛 常见问题
 
