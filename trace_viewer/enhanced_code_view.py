@@ -337,7 +337,7 @@ class EnhancedCodeEdit(QtWidgets.QPlainTextEdit):
     
     def event(self, event):
         """事件处理：实现悬停提示"""
-        if event.type() == QtCore.QEvent.ToolTip:
+        if event.type() == QtCore.QEvent.Type.ToolTip:
             cursor = self.cursorForPosition(event.pos())
             line_num = cursor.blockNumber()
             
