@@ -64,15 +64,15 @@ class InstructionAnalyzer:
     def get_operation_icon(op_type: str) -> str:
         """获取操作类型的图标"""
         icons = {
-            'load': '📥',      # 加载
-            'store': '📤',     # 存储
-            'arithmetic': '➕', # 算术
-            'logic': '⚡',     # 逻辑
-            'shift': '↔️',     # 移位
-            'branch': '🔀',    # 分支
-            'compare': '⚖️',   # 比较
-            'move': '➡️',      # 移动
-            'other': '·'       # 其他
+            'load': '↓',      # 加载
+            'store': '↑',     # 存储
+            'arithmetic': '+', # 算术
+            'logic': '&',     # 逻辑
+            'shift': '<<',    # 移位
+            'branch': '*',    # 分支
+            'compare': '?',   # 比较
+            'move': '→',      # 移动
+            'other': '·'      # 其他
         }
         return icons.get(op_type, '·')
     
