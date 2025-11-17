@@ -120,8 +120,8 @@ ENUM_MIGRATIONS = {
     r'ClosedHandCursor|DragCopyCursor|DragMoveCursor|DragLinkCursor|BitmapCursor|CustomCursor)':
         r'QtCore.Qt.CursorShape.\1',
     
-    # Qt.WindowType
-    r'QtCore\.Qt\.(Widget|Window|Dialog|Sheet|Drawer|Popup|Tool|ToolTip|SplashScreen|Desktop|'
+    # Qt.WindowType (注意：Tool 后面不能跟 BarArea，避免匹配 ToolBarArea)
+    r'QtCore\.Qt\.(Widget|Window|Dialog|Sheet|Drawer|Popup|Tool(?!BarArea)|ToolTip|SplashScreen|Desktop|'
     r'SubWindow|ForeignWindow|CoverWindow|WindowType_Mask|MSWindowsFixedSizeDialogHint|'
     r'MSWindowsOwnDC|BypassWindowManagerHint|X11BypassWindowManagerHint|FramelessWindowHint|'
     r'WindowTitleHint|WindowSystemMenuHint|WindowMinimizeButtonHint|WindowMaximizeButtonHint|'
