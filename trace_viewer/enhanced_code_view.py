@@ -208,7 +208,7 @@ class EnhancedCodeEdit(QtWidgets.QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
-        self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        self.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
         
         # 行号区域
         self.line_number_area = LineNumberArea(self)

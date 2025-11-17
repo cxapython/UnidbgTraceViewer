@@ -102,7 +102,7 @@ class TraceViewer(QtWidgets.QMainWindow):
             "QTableWidget::item:selected{background:#1a232e;color:#8bd5ff;}"
         )
 
-        right_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        right_splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         right_splitter.addWidget(self.code_edit)
         right_splitter.addWidget(self.reg_table)
         right_splitter.setStretchFactor(0, 3)
@@ -124,7 +124,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         self.code_edit.addressClicked.connect(self._on_code_addr_clicked)
         self.code_edit.lineClicked.connect(self._on_code_line_clicked)
         # 代码区右键：从当前行一键追踪
-        self.code_edit.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.code_edit.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.code_edit.customContextMenuRequested.connect(self._on_code_context)
 
         # 值流追踪面板（右侧停靠）
