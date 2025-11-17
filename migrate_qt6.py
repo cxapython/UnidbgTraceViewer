@@ -163,6 +163,10 @@ ENUM_MIGRATIONS = {
     r'AllToolBarAreas|NoToolBarArea)':
         r'QtCore.Qt.ToolBarArea.\1',
     
+    # QFont.Weight
+    r'QtGui\.QFont\.(Thin|ExtraLight|Light|Normal|Medium|DemiBold|Bold|ExtraBold|Black)':
+        r'QtGui.QFont.Weight.\1',
+    
     # QKeySequence.StandardKey
     r'QtGui\.QKeySequence\.(Open|Close|Save|New|Delete|Cut|Copy|Paste|Undo|Redo|Back|Forward|'
     r'Refresh|ZoomIn|ZoomOut|Print|AddTab|NextChild|PreviousChild|Find|FindNext|FindPrevious|'

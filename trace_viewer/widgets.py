@@ -74,7 +74,7 @@ class AssemblyHighlighter(QtGui.QSyntaxHighlighter):
 
         self.f_opcode = QtGui.QTextCharFormat()
         self.f_opcode.setForeground(self.c_opcode)
-        self.f_opcode.setFontWeight(QtGui.QFont.Bold)
+        self.f_opcode.setFontWeight(QtGui.QFont.Weight.Bold)
 
         self.f_reg = QtGui.QTextCharFormat()
         self.f_reg.setForeground(self.c_reg)

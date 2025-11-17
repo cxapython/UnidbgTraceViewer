@@ -402,7 +402,7 @@ class EnhancedAssemblyHighlighter(QtGui.QSyntaxHighlighter):
         # 地址格式
         addr_format = QtGui.QTextCharFormat()
         addr_format.setForeground(QtGui.QColor('#8bd5ff'))
-        addr_format.setFontWeight(QtGui.QFont.Bold)
+        addr_format.setFontWeight(QtGui.QFont.Weight.Bold)
         self.highlighting_rules.append((re.compile(r'0x[0-9a-fA-F]+'), addr_format))
         
         # 寄存器格式
@@ -444,6 +444,6 @@ class EnhancedAssemblyHighlighter(QtGui.QSyntaxHighlighter):
                         op_format = QtGui.QTextCharFormat()
                         color = InstructionAnalyzer.get_operation_color(op_type)
                         op_format.setForeground(QtGui.QColor(color))
-                        op_format.setFontWeight(QtGui.QFont.Bold)
+                        op_format.setFontWeight(QtGui.QFont.Weight.Bold)
                         self.setFormat(op_start, len(opcode), op_format)
 
