@@ -8,7 +8,7 @@ class MemoryDiffDock(QtWidgets.QDockWidget):
     def __init__(self, parent=None):
         super().__init__('内存写入对比', parent)
         self.setObjectName('MemoryDiffDock')
-        self.setFeatures(QtWidgets.QDockWidget.DockWidgetClosable | QtWidgets.QDockWidget.DockWidgetMovable)
+        self.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
 
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)

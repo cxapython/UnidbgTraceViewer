@@ -305,7 +305,7 @@ class EnhancedCodeEdit(QtWidgets.QPlainTextEdit):
                 number = str(block_number + 1)
                 painter.drawText(0, top, self.line_number_area.width() - 5,
                                self.fontMetrics().height(),
-                               QtCore.Qt.AlignRight, number)
+                               QtCore.Qt.AlignmentFlag.AlignRight, number)
             
             block = block.next()
             top = bottom
@@ -315,7 +315,7 @@ class EnhancedCodeEdit(QtWidgets.QPlainTextEdit):
     def mousePressEvent(self, event):
         """鼠标点击事件：支持点击地址跳转和行点击"""
         super().mousePressEvent(event)
-        if event.button() == QtCore.Qt.LeftButton:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
             cursor = self.cursorForPosition(event.pos())
             line_num = cursor.blockNumber()
             self.lineClicked.emit(line_num)

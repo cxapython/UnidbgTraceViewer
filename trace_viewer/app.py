@@ -130,12 +130,12 @@ class TraceViewer(QtWidgets.QMainWindow):
         # 值流追踪面板（右侧停靠）
         self.vf_dock = ValueFlowDock(self)
         self.vf_dock.jumpToEvent.connect(self._jump_to_event_index)
-        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.vf_dock)
+        self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, self.vf_dock)
 
         # 内存查看器面板（右侧停靠）
         # 注意：由于Unidbg trace文件不包含实际内存数据，此功能暂时隐藏
         self.mem_viewer_dock = MemoryViewerDock(self)
-        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.mem_viewer_dock)
+        self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, self.mem_viewer_dock)
         self.mem_viewer_dock.hide()  # 默认隐藏，因为trace文件没有内存数据
         
         # 内存写入对比面板（禁用以避免卡顿）
@@ -456,13 +456,13 @@ class TraceViewer(QtWidgets.QMainWindow):
         ev = self.parser.events[ev_idx]
         
         # 反向追踪：让用户输入寄存器名和值
-        act_trace = QtWidgets.QAction('反向追踪寄存器值来源...', menu)
+        act_trace = QtGui.QAction('反向追踪寄存器值来源...', menu)
         act_trace.triggered.connect(lambda: self._trace_with_input_dialog(ev_idx))
         menu.addSeparator()
         menu.addAction(act_trace)
         
         # 导出选中代码为伪C
-        act_export_c = QtWidgets.QAction('导出所选代码为伪C', menu)
+        act_export_c = QtGui.QAction('导出所选代码为伪C', menu)
         act_export_c.triggered.connect(self._export_selected_code_to_c)
         menu.addAction(act_export_c)
         menu.exec_(self.code_edit.mapToGlobal(pos))
@@ -886,7 +886,7 @@ class TraceViewer(QtWidgets.QMainWindow):
                 str(getattr(ev, 'call_id', 0)),
                 self.vf_dock._fmt_low8(reg, idx), self.vf_dock._fmt_bitops(ev.asm)
             ])
-            item.setData(0, QtCore.Qt.UserRole, idx)
+            item.setData(0, QtCore.Qt.ItemDataRole.UserRole, idx)
             self.vf_dock.list.addTopLevelItem(item)
 
     def _build_menu(self) -> None:
@@ -894,28 +894,28 @@ class TraceViewer(QtWidgets.QMainWindow):
         menubar = self.menuBar()
         file_menu = menubar.addMenu('文件(&F)')
 
-        open_act = QtWidgets.QAction('打开(&O)...', self)
-        open_act.setShortcut(QtGui.QKeySequence.Open)
+        open_act = QtGui.QAction('打开(&O)...', self)
+        open_act.setShortcut(QtGui.QKeySequence.StandardKey.Open)
         open_act.triggered.connect(self.open_file_dialog)
         file_menu.addAction(open_act)
 
         goto_menu = menubar.addMenu('定位(&G)')
-        goto_addr_act = QtWidgets.QAction('跳转到地址(&A)...', self)
+        goto_addr_act = QtGui.QAction('跳转到地址(&A)...', self)
         goto_addr_act.setShortcut('Ctrl+L')
         goto_addr_act.triggered.connect(self._goto_address_dialog)
         goto_menu.addAction(goto_addr_act)
 
         view_menu = menubar.addMenu('视图(&V)')
-        zoom_in = QtWidgets.QAction('代码字体增大', self)
+        zoom_in = QtGui.QAction('代码字体增大', self)
         zoom_in.setShortcut('Ctrl+=')
         zoom_in.triggered.connect(lambda: self._adjust_code_font(1))
-        zoom_out = QtWidgets.QAction('代码字体减小', self)
+        zoom_out = QtGui.QAction('代码字体减小', self)
         zoom_out.setShortcut('Ctrl+-')
         zoom_out.triggered.connect(lambda: self._adjust_code_font(-1))
         view_menu.addAction(zoom_in)
         view_menu.addAction(zoom_out)
         # 显示/隐藏：值流追踪面板
-        act_vf = QtWidgets.QAction('值流追踪面板', self)
+        act_vf = QtGui.QAction('值流追踪面板', self)
         act_vf.setCheckable(True)
         act_vf.setChecked(True)
         act_vf.toggled.connect(self.vf_dock.setVisible)
@@ -937,7 +937,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         """构建顶部地址栏（输入 0x... 回车跳转）。"""
         toolbar = QtWidgets.QToolBar('导航')
         toolbar.setMovable(False)
-        self.addToolBar(QtCore.Qt.TopToolBarArea, toolbar)
+        self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, toolbar)
 
         self.addr_edit = QtWidgets.QLineEdit()
         self.addr_edit.setPlaceholderText('输入地址，例如 0x12025890 后回车跳转')
@@ -1058,7 +1058,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         self.func_list.clear()
         for addr, name in self.parser.get_branch_function_list():
             item = QtWidgets.QTreeWidgetItem([f'0x{addr:08x}', name])
-            item.setData(0, QtCore.Qt.UserRole, addr)
+            item.setData(0, QtCore.Qt.ItemDataRole.UserRole, addr)
             self.func_list.addTopLevelItem(item)
 
         # 清空代码与寄存器窗口
@@ -1176,7 +1176,7 @@ def _busy(self, on: bool) -> None:
     try:
         if on:
             self._busy_count = max(0, getattr(self, '_busy_count', 0)) + 1
-            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
         else:
             if getattr(self, '_busy_count', 0) > 0:
                 self._busy_count -= 1

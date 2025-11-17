@@ -6,7 +6,7 @@ def busy(self, on: bool) -> None:
     try:
         if on:
             self._busy_count = max(0, getattr(self, '_busy_count', 0)) + 1
-            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
         else:
             if getattr(self, '_busy_count', 0) > 0:
                 self._busy_count -= 1

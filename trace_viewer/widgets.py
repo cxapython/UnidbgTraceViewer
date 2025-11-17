@@ -25,7 +25,7 @@ class ClickableCodeEdit(QtWidgets.QPlainTextEdit):
         self._press_pos = None
 
     def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
-        if e.button() == QtCore.Qt.LeftButton:
+        if e.button() == QtCore.Qt.MouseButton.LeftButton:
             self._press_pos = e.pos()
         else:
             self._press_pos = None
@@ -34,7 +34,7 @@ class ClickableCodeEdit(QtWidgets.QPlainTextEdit):
     def mouseReleaseEvent(self, e: QtGui.QMouseEvent) -> None:
         super().mouseReleaseEvent(e)
         # 仅在左键点击、无拖拽、且当前没有文本选择时，才触发行点击与地址解析，避免复制被打断
-        if e.button() != QtCore.Qt.LeftButton:
+        if e.button() != QtCore.Qt.MouseButton.LeftButton:
             return
         tc = self.textCursor()
         if tc.hasSelection():

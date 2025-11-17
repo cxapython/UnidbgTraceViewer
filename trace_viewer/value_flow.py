@@ -17,7 +17,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
     def __init__(self, parent=None):
         super().__init__('值流追踪（反向+前向）', parent)
         self.setObjectName('ValueFlowDock')
-        self.setFeatures(QtWidgets.QDockWidget.DockWidgetClosable | QtWidgets.QDockWidget.DockWidgetMovable)
+        self.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
 
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)
@@ -129,7 +129,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         self._last_jump_ts = 0.0  # 节流
 
         # 右键菜单
-        self.list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.list.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._on_list_context)
         layout.addWidget(self.list)
 
@@ -908,7 +908,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
 
     def _set_busy(self, busy: bool) -> None:
         if busy:
-            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
         else:
             QtWidgets.QApplication.restoreOverrideCursor()
 

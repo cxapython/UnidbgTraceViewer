@@ -19,8 +19,8 @@ class MemoryViewerDock(QtWidgets.QDockWidget):
     def __init__(self, parent=None):
         super().__init__('内存查看器', parent)
         self.setObjectName('MemoryViewerDock')
-        self.setFeatures(QtWidgets.QDockWidget.DockWidgetClosable | 
-                        QtWidgets.QDockWidget.DockWidgetMovable)
+        self.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable | 
+                        QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
         
         self.parser = None
         self._current_event_idx = 0
@@ -66,7 +66,7 @@ class MemoryViewerDock(QtWidgets.QDockWidget):
         # 内存视图（使用等宽字体）
         self.mem_view = QtWidgets.QTextEdit()
         self.mem_view.setReadOnly(True)
-        self.mem_view.setLineWrapMode(QtWidgets.QTextEdit.NoWrap)
+        self.mem_view.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.NoWrap)
         
         font = QtGui.QFont('Consolas, Monaco, monospace', 10)
         self.mem_view.setFont(font)
