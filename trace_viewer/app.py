@@ -32,6 +32,14 @@ try:
 except Exception:
     from enhanced_code_view import EnhancedCodeEdit, EnhancedCodeFormatter, EnhancedAssemblyHighlighter  # type: ignore
 try:
+    from .smart_register import RegisterAnalyzer
+except Exception:
+    from smart_register import RegisterAnalyzer  # type: ignore
+try:
+    from .memory_viewer import MemoryViewerDock
+except Exception:
+    from memory_viewer import MemoryViewerDock  # type: ignore
+try:
     from .workers import ParserWorker, RegsWorker
 except Exception:
     from workers import ParserWorker, RegsWorker  # type: ignore
@@ -79,8 +87,9 @@ class TraceViewer(QtWidgets.QMainWindow):
         # 右侧：代码 + 寄存器（使用增强的代码视图）
         self.code_edit = EnhancedCodeEdit()
         self.code_formatter = EnhancedCodeFormatter()
-        self.reg_table = QtWidgets.QTableWidget(0, 3)
-        self.reg_table.setHorizontalHeaderLabels(['寄存器', '之前', '之后'])
+        self.reg_analyzer = RegisterAnalyzer()  # 智能寄存器分析器
+        self.reg_table = QtWidgets.QTableWidget(0, 5)  # 增加列：用途、趋势
+        self.reg_table.setHorizontalHeaderLabels(['寄存器', '之前', '之后', '用途', '趋势'])
         self.reg_table.horizontalHeader().setStretchLastSection(True)
         self.reg_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.reg_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -122,6 +131,10 @@ class TraceViewer(QtWidgets.QMainWindow):
         self.vf_dock.jumpToEvent.connect(self._jump_to_event_index)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.vf_dock)
 
+        # 内存查看器面板（右侧停靠）
+        self.mem_viewer_dock = MemoryViewerDock(self)
+        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.mem_viewer_dock)
+        
         # 内存写入对比面板（禁用以避免卡顿）
         self.mem_dock = None
 
@@ -238,8 +251,13 @@ class TraceViewer(QtWidgets.QMainWindow):
         if not self.parser:
             return
         ev_idx = max(0, min(ev_idx, len(self.parser.events) - 1))
+        self._last_event_idx = ev_idx  # 记录当前事件索引（供寄存器分析使用）
         self._render_code_at(ev_idx)
         self._rebuild_regs_async(ev_idx)
+        
+        # 更新内存查看器的事件索引
+        if hasattr(self, 'mem_viewer_dock'):
+            self.mem_viewer_dock.set_event_index(ev_idx)
 
     def _render_code_at(self, event_index: int, context_window: int = 80) -> None:
         if not self.parser:
@@ -286,7 +304,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         # 内存对比改为在寄存器复原完成后异步更新，避免主线程卡顿
 
     def _render_regs(self, regs_before: dict, regs_after: dict) -> None:
-        # 将寄存器按“常见顺序”展示，未出现的追加在后
+        # 将寄存器按"常见顺序"展示，未出现的追加在后
         common_order = [
             *(f"r{i}" for i in range(13)), 'sp', 'lr', 'pc', 'cpsr',
             *(f"x{i}" for i in range(31)),
@@ -304,6 +322,12 @@ class TraceViewer(QtWidgets.QMainWindow):
                 seen.add(k)
 
         self.reg_table.setRowCount(len(keys))
+        
+        # 初始化寄存器分析器（如果有parser）
+        if self.parser and not hasattr(self, '_reg_analyzer_attached'):
+            self.reg_analyzer.parser = self.parser
+            self._reg_analyzer_attached = True
+        
         tracked_row = -1
         for row, name in enumerate(keys):
             name_item = QtWidgets.QTableWidgetItem(name)
@@ -311,6 +335,34 @@ class TraceViewer(QtWidgets.QMainWindow):
             a = (regs_after or {}).get(name)
             b_item = QtWidgets.QTableWidgetItem('' if b is None else f"0x{b:08x}")
             a_item = QtWidgets.QTableWidgetItem('' if a is None else f"0x{a:08x}")
+            
+            # 智能分析寄存器（获取用途和趋势）
+            # 只分析前10个寄存器以避免性能问题
+            if row < 10 and self.parser and hasattr(self, '_current_code_start'):
+                try:
+                    ev_idx = getattr(self, '_last_event_idx', 0)
+                    start_idx = max(0, ev_idx - 50)
+                    end_idx = min(len(self.parser.events) - 1, ev_idx + 50)
+                    analysis = self.reg_analyzer.analyze_register(name, start_idx, end_idx)
+                    
+                    # 用途
+                    purpose_text = f"{analysis['icon']} {analysis['suggested_name']}"
+                    purpose_item = QtWidgets.QTableWidgetItem(purpose_text)
+                    purpose_item.setToolTip(analysis['description'])
+                    
+                    # 趋势
+                    trend_icon = self.reg_analyzer.get_trend_icon(analysis['trend'])
+                    trend_item = QtWidgets.QTableWidgetItem(trend_icon)
+                    trend_item.setToolTip(analysis['description'])
+                    trend_color = self.reg_analyzer.get_trend_color(analysis['trend'])
+                    trend_item.setForeground(QtGui.QBrush(QtGui.QColor(trend_color)))
+                except:
+                    purpose_item = QtWidgets.QTableWidgetItem('')
+                    trend_item = QtWidgets.QTableWidgetItem('')
+            else:
+                purpose_item = QtWidgets.QTableWidgetItem('')
+                trend_item = QtWidgets.QTableWidgetItem('')
+            
             # 颜色标识
             color = self._color_map.get(name)
             if color is not None:
@@ -324,12 +376,14 @@ class TraceViewer(QtWidgets.QMainWindow):
             # 被追踪寄存器整行高亮
             if self._tracked_reg and name.lower() == self._tracked_reg:
                 tracked_row = row
-                for it in (name_item, b_item, a_item):
+                for it in (name_item, b_item, a_item, purpose_item, trend_item):
                     it.setBackground(QtGui.QColor('#1a232e'))
                     it.setForeground(QtGui.QBrush(QtGui.QColor('#8bd5ff')))
             self.reg_table.setItem(row, 0, name_item)
             self.reg_table.setItem(row, 1, b_item)
             self.reg_table.setItem(row, 2, a_item)
+            self.reg_table.setItem(row, 3, purpose_item)
+            self.reg_table.setItem(row, 4, trend_item)
 
         # 选中并滚动到被追踪寄存器
         # Bug修复：使用QTimer.singleShot延迟滚动，确保表格布局完成后再滚动
@@ -1016,6 +1070,9 @@ class TraceViewer(QtWidgets.QMainWindow):
 
         # 将解析器与地址求值函数注入侧边面板：改用解析器的预计算地址
         self.vf_dock.attach(self.parser, lambda idx: self.parser.effective_address(idx))
+        
+        # 附加内存查看器
+        self.mem_viewer_dock.attach(self.parser, 0)
 
         # 后台写入 SQLite 缓存，不阻塞 UI
         try:
