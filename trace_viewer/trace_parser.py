@@ -58,16 +58,24 @@ class TraceParser:
 
     功能概述：
     - 流式按行解析超大 trace 文件；
-    - 构建 地址→事件索引，并收集分支目标作为“函数候选”；
+    - 构建 地址→事件索引，并收集分支目标作为"函数候选"；
     - 解析每行寄存器读写，并定期保存寄存器快照以便快速复原任意时刻寄存器。"""
 
-    # 示例行格式（ARM32/Thumb）：
-    # 32位编码: [041091e5] 0x1202588c: "ldr r1, [r1, #4]" ...
-    # 16位编码: [0978    ] 0x12023dd6: "ldrb r1, [r1]" ...
-    # 适配 4 或 8 位编码，右侧可能有空格填充
+    # 示例行格式（支持两种格式）：
+    # 格式1 - 标准Unidbg格式 (ARM32/Thumb):
+    #   [041091e5][libjni.so 0x1202588c][041091e5] 0x1202588c: "ldr r1, [r1, #4]" ...
+    # 格式2 - JD trace格式 (ARM64):
+    #   [14:07:57 422][0x29ce4] [e007bea9] 0x40029ce4: "stp x0, x1, [sp, #-0x20]!" ...
+    
+    # 兼容两种格式的正则表达式
     LINE_RE = re.compile(
-        r"^\[(?P<ts>[^\]]+)\]\[(?P<mod>[^\s\]]+)\s+(?P<modoff>0x[0-9a-fA-F]+)\]\s+\[(?P<enc>[0-9a-fA-F]{4}(?:\s{0,4}[0-9a-fA-F]{0,4})?)\]\s+"
-        r"(?P<pc>0x[0-9a-fA-F]+):\s+\"(?P<asm>[^\"]+)\"(?P<rest>.*)$"
+        r"^\[(?P<ts>[^\]]+)\]"  # 时间戳：支持十六进制或时分秒格式
+        r"\[(?P<mod>[^\]]+?)"   # 模块信息：可能包含空格和偏移，或只有偏移
+        r"(?:\s+(?P<modoff>0x[0-9a-fA-F]+))?\]\s+"  # 可选的模块偏移
+        r"\[(?P<enc>[0-9a-fA-F]{4}(?:\s{0,4}[0-9a-fA-F]{0,4})?)\]\s+"  # 编码
+        r"(?P<pc>0x[0-9a-fA-F]+):\s+"  # PC地址
+        r"\"(?P<asm>[^\"]+)\""  # 汇编指令
+        r"(?P<rest>.*)$"  # 其余部分
     )
 
     # 寄存器匹配：ARM32 的 r0..r15, sp, lr, pc, cpsr；兼容 ARM64 的 x0..x30 及 w0..w30
@@ -376,6 +384,16 @@ class TraceParser:
             pc = int(pc_hex, 16)
         except ValueError:
             return None
+
+        # 处理JD trace格式：[0x29ce4] 只有偏移，没有模块名
+        # 如果mod看起来像一个十六进制地址（0x开头），说明这是JD格式
+        if mod and mod.startswith('0x'):
+            # JD格式：mod实际是偏移地址
+            modoff = mod
+            mod = 'unknown'  # 设置默认模块名
+        elif modoff is None:
+            # 标准格式但没有偏移（不太可能）
+            modoff = ''
 
         reads, writes = self._parse_regs(rest)
         ev = TraceEvent(
