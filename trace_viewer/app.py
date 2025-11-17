@@ -87,7 +87,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         # 右侧：代码 + 寄存器（使用增强的代码视图）
         self.code_edit = EnhancedCodeEdit()
         # 配置：use_emoji=True 使用emoji图标，use_emoji=False 使用ASCII图标
-        self.code_formatter = EnhancedCodeFormatter(use_emoji=True)  # Qt6支持emoji更好
+        self.code_formatter = EnhancedCodeFormatter(use_emoji=False)  # 使用ASCII图标更稳定
         self.reg_analyzer = RegisterAnalyzer()  # 智能寄存器分析器
         self.reg_table = QtWidgets.QTableWidget(0, 5)  # 增加列：用途、趋势
         self.reg_table.setHorizontalHeaderLabels(['寄存器', '之前', '之后', '用途', '趋势'])
