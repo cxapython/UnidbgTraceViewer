@@ -937,7 +937,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         """构建顶部地址栏（输入 0x... 回车跳转）。"""
         toolbar = QtWidgets.QToolBar('导航')
         toolbar.setMovable(False)
-        self.addToolBar(QtCore.Qt.WindowType.ToolBarArea.TopToolBarArea, toolbar)
+        self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, toolbar)
 
         self.addr_edit = QtWidgets.QLineEdit()
         self.addr_edit.setPlaceholderText('输入地址，例如 0x12025890 后回车跳转')
