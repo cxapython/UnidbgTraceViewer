@@ -338,6 +338,9 @@ class TraceViewer(QtWidgets.QMainWindow):
             
             # 智能分析寄存器（获取用途和趋势）
             # 只分析前10个寄存器以避免性能问题
+            purpose_item = QtWidgets.QTableWidgetItem('-')
+            trend_item = QtWidgets.QTableWidgetItem('-')
+            
             if row < 10 and self.parser and hasattr(self, '_current_code_start'):
                 try:
                     ev_idx = getattr(self, '_last_event_idx', 0)
@@ -345,23 +348,21 @@ class TraceViewer(QtWidgets.QMainWindow):
                     end_idx = min(len(self.parser.events) - 1, ev_idx + 50)
                     analysis = self.reg_analyzer.analyze_register(name, start_idx, end_idx)
                     
-                    # 用途
-                    purpose_text = f"{analysis['icon']} {analysis['suggested_name']}"
-                    purpose_item = QtWidgets.QTableWidgetItem(purpose_text)
-                    purpose_item.setToolTip(analysis['description'])
-                    
-                    # 趋势
-                    trend_icon = self.reg_analyzer.get_trend_icon(analysis['trend'])
-                    trend_item = QtWidgets.QTableWidgetItem(trend_icon)
-                    trend_item.setToolTip(analysis['description'])
-                    trend_color = self.reg_analyzer.get_trend_color(analysis['trend'])
-                    trend_item.setForeground(QtGui.QBrush(QtGui.QColor(trend_color)))
-                except:
-                    purpose_item = QtWidgets.QTableWidgetItem('')
-                    trend_item = QtWidgets.QTableWidgetItem('')
-            else:
-                purpose_item = QtWidgets.QTableWidgetItem('')
-                trend_item = QtWidgets.QTableWidgetItem('')
+                    if analysis and 'icon' in analysis:
+                        # 用途
+                        purpose_text = f"{analysis['icon']} {analysis['suggested_name']}"
+                        purpose_item = QtWidgets.QTableWidgetItem(purpose_text)
+                        purpose_item.setToolTip(analysis['description'])
+                        
+                        # 趋势
+                        trend_icon = self.reg_analyzer.get_trend_icon(analysis['trend'])
+                        trend_item = QtWidgets.QTableWidgetItem(trend_icon)
+                        trend_item.setToolTip(analysis['description'])
+                        trend_color = self.reg_analyzer.get_trend_color(analysis['trend'])
+                        trend_item.setForeground(QtGui.QBrush(QtGui.QColor(trend_color)))
+                except Exception:
+                    # 分析失败，使用默认值
+                    pass
             
             # 颜色标识
             color = self._color_map.get(name)

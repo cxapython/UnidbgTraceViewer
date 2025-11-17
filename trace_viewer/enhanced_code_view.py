@@ -124,12 +124,9 @@ class EnhancedCodeFormatter:
                      regs_after: Optional[Dict] = None) -> str:
         """格式化单个事件为增强显示格式
         
-        格式: 行号 | 图标 PC地址 | 汇编指令 | 关键信息
-        例如: 0042 | 📥 0x1234 | ldr r0, [r1, #0x10] | r0=0x4A3B←[0x7FFE10]
+        简化格式: 图标 PC地址 | 汇编指令
+        例如: 📥 0x12057fa4 | push {r4, r5, r6, r7, lr}
         """
-        # 行号（4位）
-        line_num = f"{event_index:04d}"
-        
         # 操作类型图标
         op_type = self.analyzer.get_operation_type(event.asm)
         icon = self.analyzer.get_operation_icon(op_type)
@@ -140,42 +137,9 @@ class EnhancedCodeFormatter:
         # 汇编指令
         asm_str = event.asm
         
-        # 关键信息：寄存器值和内存数据
-        info_parts = []
-        
-        # 提取写入的寄存器及其值
-        if event.writes and regs_after:
-            for reg_name, _ in event.writes.items():
-                if reg_name in regs_after:
-                    val = regs_after[reg_name]
-                    info_parts.append(f"{reg_name}=0x{val:x}")
-        
-        # 提取读取的寄存器及其值
-        if event.reads and regs_before:
-            read_regs = []
-            for reg_name, _ in event.reads.items():
-                if reg_name in regs_before:
-                    val = regs_before[reg_name]
-                    read_regs.append(f"{reg_name}=0x{val:x}")
-            if read_regs:
-                info_parts.append(f"({', '.join(read_regs)})")
-        
-        # 内存访问信息
-        if event.effaddr is not None and event.mem_op:
-            if event.mem_op == 'load':
-                # 从内存加载：显示源地址
-                info_parts.append(f"←[0x{event.effaddr:x}]")
-            elif event.mem_op == 'store':
-                # 存储到内存：显示目标地址
-                info_parts.append(f"→[0x{event.effaddr:x}]")
-        
-        info_str = ' '.join(info_parts) if info_parts else ''
-        
-        # 组合完整行
-        if info_str:
-            return f"{line_num} | {icon} {pc_str} | {asm_str:<40} | {info_str}"
-        else:
-            return f"{line_num} | {icon} {pc_str} | {asm_str}"
+        # 简化格式：只显示图标、PC和汇编
+        # 详细信息通过悬停提示查看
+        return f"{icon} {pc_str} | {asm_str}"
     
     def format_events(self, events: List, start_index: int, parser=None) -> str:
         """格式化多个事件"""
