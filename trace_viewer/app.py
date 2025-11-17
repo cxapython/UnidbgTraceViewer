@@ -132,8 +132,10 @@ class TraceViewer(QtWidgets.QMainWindow):
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.vf_dock)
 
         # 内存查看器面板（右侧停靠）
+        # 注意：由于Unidbg trace文件不包含实际内存数据，此功能暂时隐藏
         self.mem_viewer_dock = MemoryViewerDock(self)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.mem_viewer_dock)
+        self.mem_viewer_dock.hide()  # 默认隐藏，因为trace文件没有内存数据
         
         # 内存写入对比面板（禁用以避免卡顿）
         self.mem_dock = None
