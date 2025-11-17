@@ -427,7 +427,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         sel = QtWidgets.QTextEdit.ExtraSelection()
         sel.cursor = cursor
         sel.format.setBackground(QtGui.QColor('#fff7cc'))  # 柔和的浅黄
-        sel.format.setProperty(QtGui.QTextFormat.FullWidthSelection, True)
+        sel.format.setProperty(QtGui.QTextFormat.Property.FullWidthSelection, True)
         self.code_edit.setExtraSelections([sel])
 
     def _on_code_line_clicked(self, row: int) -> None:
@@ -937,7 +937,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         """构建顶部地址栏（输入 0x... 回车跳转）。"""
         toolbar = QtWidgets.QToolBar('导航')
         toolbar.setMovable(False)
-        self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, toolbar)
+        self.addToolBar(QtCore.Qt.WindowType.ToolBarArea.TopToolBarArea, toolbar)
 
         self.addr_edit = QtWidgets.QLineEdit()
         self.addr_edit.setPlaceholderText('输入地址，例如 0x12025890 后回车跳转')

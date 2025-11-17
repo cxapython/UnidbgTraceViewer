@@ -167,6 +167,25 @@ ENUM_MIGRATIONS = {
     r'QtGui\.QFont\.(Thin|ExtraLight|Light|Normal|Medium|DemiBold|Bold|ExtraBold|Black)':
         r'QtGui.QFont.Weight.\1',
     
+    # QTextFormat.Property
+    r'QtGui\.QTextFormat\.(ObjectIndex|CssFloat|LayoutDirection|OutlinePen|BackgroundBrush|'
+    r'ForegroundBrush|BackgroundImageUrl|BlockAlignment|BlockTopMargin|BlockBottomMargin|'
+    r'BlockLeftMargin|BlockRightMargin|TextIndent|TabPositions|BlockIndent|LineHeight|'
+    r'LineHeightType|BlockNonBreakableLines|BlockTrailingHorizontalRulerWidth|BlockQuoteLevel|'
+    r'BlockCodeLanguage|BlockCodeFence|BlockMarker|FirstFontProperty|FontFamily|FontPointSize|'
+    r'FontSizeAdjustment|FontSizeIncrement|FontWeight|FontItalic|FontUnderline|FontOverline|'
+    r'FontStrikeOut|FontFixedPitch|FontPixelSize|FontLetterSpacing|FontWordSpacing|'
+    r'FontCapitalization|FontLetterSpacingType|FontStretch|FontStyleHint|FontStyleStrategy|'
+    r'FontKerning|FontHintingPreference|FontFamilies|FontStyleName|LastFontProperty|'
+    r'TextOutline|TextUnderlineColor|TextVerticalAlignment|TextUnderlineStyle|TextToolTip|'
+    r'IsAnchor|AnchorHref|AnchorName|ObjectType|ListStyle|ListIndent|ListNumberPrefix|'
+    r'ListNumberSuffix|FrameBorder|FrameMargin|FramePadding|FrameWidth|FrameHeight|'
+    r'FrameTopMargin|FrameBottomMargin|FrameLeftMargin|FrameRightMargin|FrameBorderBrush|'
+    r'FrameBorderStyle|TableColumns|TableColumnWidthConstraints|TableCellSpacing|'
+    r'TableCellPadding|TableHeaderRowCount|TableBorderCollapse|ImageName|ImageWidth|'
+    r'ImageHeight|ImageQuality|FullWidthSelection|PageBreakPolicy|UserProperty)':
+        r'QtGui.QTextFormat.Property.\1',
+    
     # QKeySequence.StandardKey
     r'QtGui\.QKeySequence\.(Open|Close|Save|New|Delete|Cut|Copy|Paste|Undo|Redo|Back|Forward|'
     r'Refresh|ZoomIn|ZoomOut|Print|AddTab|NextChild|PreviousChild|Find|FindNext|FindPrevious|'
