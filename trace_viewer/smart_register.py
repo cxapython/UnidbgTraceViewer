@@ -240,17 +240,17 @@ class RegisterAnalyzer:
         return base_name
     
     def _get_icon(self, purpose: str) -> str:
-        """获取用途图标"""
+        """获取用途图标（ASCII字符）"""
         icon_map = {
-            RegisterPurpose.POINTER: '📍',
-            RegisterPurpose.INDEX: '📏',
-            RegisterPurpose.COUNTER: '🔢',
-            RegisterPurpose.KEY: '🔑',
-            RegisterPurpose.DATA: '📦',
-            RegisterPurpose.LENGTH: '📐',
-            RegisterPurpose.OFFSET: '↗️',
-            RegisterPurpose.TEMP: '📝',
-            RegisterPurpose.UNKNOWN: '❓',
+            RegisterPurpose.POINTER: '*',   # 指针
+            RegisterPurpose.INDEX: '#',     # 索引
+            RegisterPurpose.COUNTER: 'C',   # 计数器
+            RegisterPurpose.KEY: 'K',       # 密钥
+            RegisterPurpose.DATA: 'D',      # 数据
+            RegisterPurpose.LENGTH: 'L',    # 长度
+            RegisterPurpose.OFFSET: '+',    # 偏移
+            RegisterPurpose.TEMP: 'T',      # 临时
+            RegisterPurpose.UNKNOWN: '?',   # 未知
         }
         return icon_map.get(purpose, '·')
     
@@ -311,13 +311,13 @@ class RegisterAnalyzer:
         }
     
     def get_trend_icon(self, trend: str) -> str:
-        """获取趋势图标"""
+        """获取趋势图标（ASCII字符）"""
         icons = {
-            RegisterTrend.CONSTANT: '→',
-            RegisterTrend.INCREASING: '↗',
-            RegisterTrend.DECREASING: '↘',
-            RegisterTrend.VOLATILE: '↕',
-            RegisterTrend.PERIODIC: '⟳',
+            RegisterTrend.CONSTANT: '=',    # 常量
+            RegisterTrend.INCREASING: '+',  # 递增
+            RegisterTrend.DECREASING: '-',  # 递减
+            RegisterTrend.VOLATILE: '~',    # 波动
+            RegisterTrend.PERIODIC: '@',    # 周期
         }
         return icons.get(trend, '·')
     
