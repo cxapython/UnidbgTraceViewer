@@ -834,13 +834,14 @@ class TraceViewer(QtWidgets.QMainWindow):
                 self._regs_worker.wait(50)
         except Exception:
             pass
-        _busy(self, True)
+        # 不设置忙碌光标，因为这是异步后台操作，不应影响用户交互
+        # _busy(self, True)  # 已禁用
         self._regs_worker = RegsWorker(self.parser, ev_idx, self)
         self._regs_worker.finishedWithIndex.connect(self._on_regs_ready)
         self._regs_worker.start()
 
     def _on_regs_ready(self, before: dict, after: dict, ev_idx: int) -> None:
-        _busy(self, False)
+        # _busy(self, False)  # 已禁用
         # 渲染寄存器；若期间用户已跳转到其它行，也仍然渲染最新计算结果
         self._render_regs(before, after)
         # 渲染完成后再刷新内存对比，避免在点击当下阻塞
