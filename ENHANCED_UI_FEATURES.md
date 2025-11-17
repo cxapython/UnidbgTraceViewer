@@ -30,6 +30,16 @@
 
 #### 3. **操作类型图标和颜色标注** ✅
 
+**🎨 图标样式配置**：
+
+工具支持两种图标样式，可在 `trace_viewer/app.py` 中配置：
+
+```python
+# 在 app.py 第90行附近
+self.code_formatter = EnhancedCodeFormatter(use_emoji=True)  # 改为False使用ASCII
+```
+
+**Emoji图标样式**（默认，`use_emoji=True`）：
 | 操作类型 | 图标 | 颜色 | 说明 |
 |---------|------|------|------|
 | 内存加载 | 📥 | 🟢 绿色 | ldr, ldm, pop 等 |
@@ -40,6 +50,27 @@
 | 分支跳转 | 🔀 | 🔴 红色 | b, bl, beq, bne 等 |
 | 比较指令 | ⚖️ | ⚪ 灰色 | cmp, cmn, tst 等 |
 | 数据移动 | ➡️ | 🔷 青色 | mov, movw, movt 等 |
+
+**ASCII图标样式**（兼容模式，`use_emoji=False`）：
+| 操作类型 | 图标 | 颜色 | 说明 |
+|---------|------|------|------|
+| 内存加载 | ↓ | 🟢 绿色 | ldr, ldm, pop 等 |
+| 内存存储 | ↑ | 🔵 蓝色 | str, stm, push 等 |
+| 算术运算 | + | 🟡 黄色 | add, sub, mul 等 |
+| 逻辑运算 | & | 🟠 橙色 | and, or, eor, xor 等 |
+| 移位操作 | << | 🟣 紫色 | lsl, lsr, asr, ror 等 |
+| 分支跳转 | * | 🔴 红色 | b, bl, beq, bne 等 |
+| 比较指令 | ? | ⚪ 灰色 | cmp, cmn, tst 等 |
+| 数据移动 | → | 🔷 青色 | mov, movw, movt 等 |
+
+**🔤 字体支持说明**：
+
+Emoji图标需要系统支持emoji字体：
+- ✅ **macOS**: 自动使用 `Menlo` + `Apple Color Emoji`（系统自带）
+- ✅ **Windows**: 自动使用 `Consolas` + `Segoe UI Emoji`（系统自带）
+- ✅ **Linux**: 自动使用 `DejaVu Sans Mono` + `Noto Color Emoji`（可能需要安装）
+
+如果emoji显示异常（乱码、方框），请切换到ASCII模式。
 
 **好处**：
 - 🎯 **快速识别关键操作**：一眼看出哪些是加密运算（XOR/EOR）
@@ -343,9 +374,13 @@ r4     | 0x00     | 0x01     | 📏 idx4   | ↗
 op_type = InstructionAnalyzer.get_operation_type("ldr r0, [r1]")
 # 返回: 'load'
 
-# 获取图标
-icon = InstructionAnalyzer.get_operation_icon('load')
+# 获取图标（Emoji模式）
+icon = InstructionAnalyzer.get_operation_icon('load', use_emoji=True)
 # 返回: '📥'
+
+# 获取图标（ASCII模式）
+icon = InstructionAnalyzer.get_operation_icon('load', use_emoji=False)
+# 返回: '↓'
 
 # 获取颜色
 color = InstructionAnalyzer.get_operation_color('load')
@@ -355,11 +390,16 @@ color = InstructionAnalyzer.get_operation_color('load')
 ### `EnhancedCodeFormatter`
 
 ```python
-formatter = EnhancedCodeFormatter(parser)
+# 创建格式化器（Emoji模式）
+formatter = EnhancedCodeFormatter(parser, use_emoji=True)
+
+# 创建格式化器（ASCII模式）
+formatter = EnhancedCodeFormatter(parser, use_emoji=False)
 
 # 格式化单个事件
 line = formatter.format_event(event, event_index, regs_before, regs_after)
-# 返回: "0042 | 📥 0x1234 | ldr r0, [r1] | r0=0x4A3B←[0x7FFE10]"
+# Emoji模式返回: "📥 0x1234 | ldr r0, [r1]"
+# ASCII模式返回: "↓ 0x1234 | ldr r0, [r1]"
 
 # 格式化多个事件
 text = formatter.format_events(events, start_index, parser)
