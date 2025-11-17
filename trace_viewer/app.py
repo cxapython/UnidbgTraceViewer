@@ -28,6 +28,10 @@ try:
 except Exception:
     from widgets import ClickableCodeEdit, AssemblyHighlighter  # type: ignore
 try:
+    from .enhanced_code_view import EnhancedCodeEdit, EnhancedCodeFormatter, EnhancedAssemblyHighlighter
+except Exception:
+    from enhanced_code_view import EnhancedCodeEdit, EnhancedCodeFormatter, EnhancedAssemblyHighlighter  # type: ignore
+try:
     from .workers import ParserWorker, RegsWorker
 except Exception:
     from workers import ParserWorker, RegsWorker  # type: ignore
@@ -72,8 +76,9 @@ class TraceViewer(QtWidgets.QMainWindow):
             "QTreeWidget::item:selected{background:#1a232e;color:#8bd5ff;}"
         )
 
-        # 右侧：代码 + 寄存器
-        self.code_edit = ClickableCodeEdit()
+        # 右侧：代码 + 寄存器（使用增强的代码视图）
+        self.code_edit = EnhancedCodeEdit()
+        self.code_formatter = EnhancedCodeFormatter()
         self.reg_table = QtWidgets.QTableWidget(0, 3)
         self.reg_table.setHorizontalHeaderLabels(['寄存器', '之前', '之后'])
         self.reg_table.horizontalHeader().setStretchLastSection(True)
@@ -241,14 +246,40 @@ class TraceViewer(QtWidgets.QMainWindow):
             return
         start, events = self.parser.find_events_near(event_index, context_window)
         self._current_code_start = start
-        # 显示时间戳与PC地址前缀，便于定位第几次运行
+        
+        # 使用增强格式化器生成带行号、图标、寄存器值的显示
+        # 优化：只获取中心事件的寄存器状态，其他事件延迟获取（通过悬停提示查看）
         lines = []
-        for ev in events:
-            lines.append(f"[{ev.timestamp}] 0x{ev.pc:08x}: {ev.asm}")
+        center_idx = event_index - start
+        
+        for i, ev in enumerate(events):
+            event_idx = start + i
+            
+            # 只为当前行和附近几行获取寄存器值（性能优化）
+            if abs(i - center_idx) <= 5:
+                try:
+                    regs_before = self.parser.restore_registers(event_idx)
+                    regs_after = self.parser.restore_registers(event_idx, after=True)
+                except:
+                    regs_before = None
+                    regs_after = None
+            else:
+                regs_before = None
+                regs_after = None
+            
+            # 使用增强格式化器
+            line = self.code_formatter.format_event(ev, event_idx, regs_before, regs_after)
+            lines.append(line)
+        
         self.code_edit.setPlainText('\n'.join(lines))
-        # 启用语法高亮（仅在首次创建时绑定一次）
+        
+        # 设置事件数据（用于悬停提示）
+        self.code_edit.set_events_data(events, self.parser)
+        
+        # 启用增强语法高亮（仅在首次创建时绑定一次）
         if not hasattr(self, '_asm_hl'):
-            self._asm_hl = AssemblyHighlighter(self.code_edit.document())
+            self._asm_hl = EnhancedAssemblyHighlighter(self.code_edit.document())
+        
         # 高亮当前行
         self._current_code_row = max(0, event_index - start)
         self._highlight_code_line(self._current_code_row)
