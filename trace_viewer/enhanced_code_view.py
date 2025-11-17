@@ -61,19 +61,39 @@ class InstructionAnalyzer:
             return 'other'
     
     @staticmethod
-    def get_operation_icon(op_type: str) -> str:
-        """获取操作类型的图标"""
-        icons = {
-            'load': '↓',      # 加载
-            'store': '↑',     # 存储
-            'arithmetic': '+', # 算术
-            'logic': '&',     # 逻辑
-            'shift': '<<',    # 移位
-            'branch': '*',    # 分支
-            'compare': '?',   # 比较
-            'move': '→',      # 移动
-            'other': '·'      # 其他
-        }
+    def get_operation_icon(op_type: str, use_emoji: bool = False) -> str:
+        """获取操作类型的图标
+        
+        Args:
+            op_type: 操作类型
+            use_emoji: 是否使用emoji图标（默认False使用ASCII）
+        """
+        if use_emoji:
+            # Emoji图标（需要支持emoji的字体，如 Apple Color Emoji）
+            icons = {
+                'load': '📥',      # 加载
+                'store': '📤',     # 存储
+                'arithmetic': '➕', # 算术
+                'logic': '⚡',     # 逻辑
+                'shift': '↔️',     # 移位
+                'branch': '🔀',    # 分支
+                'compare': '⚖️',   # 比较
+                'move': '➡️',      # 移动
+                'other': '·'       # 其他
+            }
+        else:
+            # ASCII图标（兼容所有系统）
+            icons = {
+                'load': '↓',      # 加载
+                'store': '↑',     # 存储
+                'arithmetic': '+', # 算术
+                'logic': '&',     # 逻辑
+                'shift': '<<',    # 移位
+                'branch': '*',    # 分支
+                'compare': '?',   # 比较
+                'move': '→',      # 移动
+                'other': '·'      # 其他
+            }
         return icons.get(op_type, '·')
     
     @staticmethod
@@ -116,9 +136,10 @@ class InstructionAnalyzer:
 class EnhancedCodeFormatter:
     """增强的代码格式化器：生成带有行号、寄存器值、内存数据的显示文本"""
     
-    def __init__(self, parser=None):
+    def __init__(self, parser=None, use_emoji: bool = False):
         self.parser = parser
         self.analyzer = InstructionAnalyzer()
+        self.use_emoji = use_emoji  # 是否使用emoji图标
     
     def format_event(self, event, event_index: int, regs_before: Optional[Dict] = None, 
                      regs_after: Optional[Dict] = None) -> str:
@@ -129,7 +150,7 @@ class EnhancedCodeFormatter:
         """
         # 操作类型图标
         op_type = self.analyzer.get_operation_type(event.asm)
-        icon = self.analyzer.get_operation_icon(op_type)
+        icon = self.analyzer.get_operation_icon(op_type, use_emoji=self.use_emoji)
         
         # PC地址
         pc_str = f"0x{event.pc:08x}"
@@ -199,8 +220,20 @@ class EnhancedCodeEdit(QtWidgets.QPlainTextEdit):
         # 初始化
         self.update_line_number_area_width(0)
         
-        # 设置字体
-        font = QtGui.QFont('Consolas, Monaco, monospace', 10)
+        # 设置字体：优先使用支持emoji的等宽字体
+        # macOS: Menlo + Apple Color Emoji
+        # Windows: Consolas + Segoe UI Emoji
+        # Linux: DejaVu Sans Mono + Noto Color Emoji
+        font_candidates = [
+            'Menlo',           # macOS 系统等宽字体，支持emoji
+            'SF Mono',         # macOS 现代等宽字体
+            'Monaco',          # macOS 经典等宽字体
+            'Consolas',        # Windows 等宽字体
+            'DejaVu Sans Mono' # Linux 等宽字体
+        ]
+        fams = set(QtGui.QFontDatabase().families())
+        font_name = next((n for n in font_candidates if n in fams), 'Monospace')
+        font = QtGui.QFont(font_name, 10)
         self.setFont(font)
         
         # 深色主题样式
