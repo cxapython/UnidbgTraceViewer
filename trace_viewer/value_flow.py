@@ -68,6 +68,37 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         forward_form.addWidget(self.btn_taint_forward)
         
         forward_layout.addLayout(forward_form)
+        
+        # 增强功能选项
+        enhanced_row = QtWidgets.QHBoxLayout()
+        self.use_enhanced_chk = QtWidgets.QCheckBox('增强模式')
+        self.use_enhanced_chk.setToolTip('启用字节级内存追踪、污点标签系统和汇合点检测')
+        self.use_enhanced_chk.setChecked(False)
+        enhanced_row.addWidget(self.use_enhanced_chk)
+        
+        self.show_confluence_chk = QtWidgets.QCheckBox('显示汇合点')
+        self.show_confluence_chk.setToolTip('高亮显示多个污点来源合并的关键计算点')
+        self.show_confluence_chk.setChecked(True)
+        self.show_confluence_chk.setEnabled(False)
+        enhanced_row.addWidget(self.show_confluence_chk)
+        
+        self.use_enhanced_chk.toggled.connect(self.show_confluence_chk.setEnabled)
+        
+        enhanced_row.addWidget(QtWidgets.QLabel('策略:'))
+        self.taint_policy_combo = QtWidgets.QComboBox()
+        self.taint_policy_combo.addItems(['NORMAL (推荐)', 'STRICT (严格)', 'LOOSE (宽松)'])
+        self.taint_policy_combo.setToolTip(
+            'STRICT: 只追踪显式数据流（减少误报）\n'
+            'NORMAL: 含常见隐式流（平衡，推荐）\n'
+            'LOOSE: 追踪所有可能路径（避免漏报）'
+        )
+        self.taint_policy_combo.setEnabled(False)
+        enhanced_row.addWidget(self.taint_policy_combo)
+        self.use_enhanced_chk.toggled.connect(self.taint_policy_combo.setEnabled)
+        
+        enhanced_row.addStretch(1)
+        forward_layout.addLayout(enhanced_row)
+        
         forward_group.setLayout(forward_layout)
         layout.addWidget(forward_group)
         
@@ -1109,8 +1140,17 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                 if not st:
                     continue
                 try:
-                    source_addrs.append(int(st, 16) if st.startswith('0x') else int(st, 16))
+                    # 正确处理十六进制和十进制
+                    if st.startswith('0x'):
+                        source_addrs.append(int(st, 16))
+                    else:
+                        # 尝试十六进制，失败则尝试十进制
+                        try:
+                            source_addrs.append(int(st, 16))
+                        except ValueError:
+                            source_addrs.append(int(st, 10))
                 except Exception:
+                    # 静默跳过无效输入
                     pass
         
         # 目标污点（高级模式）
@@ -1126,7 +1166,14 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                     if not st:
                         continue
                     try:
-                        target_addrs.append(int(st, 16) if st.startswith('0x') else int(st, 16))
+                        # 正确处理十六进制和十进制
+                        if st.startswith('0x'):
+                            target_addrs.append(int(st, 16))
+                        else:
+                            try:
+                                target_addrs.append(int(st, 16))
+                            except ValueError:
+                                target_addrs.append(int(st, 10))
                     except Exception:
                         pass
         
@@ -1136,9 +1183,19 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         if not self.parser:
             return
         source_regs, source_addrs, target_regs, target_addrs = self._parse_taint_inputs()
-        same_call = bool(self.taint_samecall_chk.isChecked())
+        same_call = bool(self.samecall_chk.isChecked())
         
-        # 高级模式选项
+        # 检查是否启用增强模式
+        use_enhanced = bool(getattr(self, 'use_enhanced_chk', None) and self.use_enhanced_chk.isChecked())
+        show_confluence = bool(getattr(self, 'show_confluence_chk', None) and self.show_confluence_chk.isChecked())
+        
+        # 获取污点策略
+        policy_text = 'normal'
+        if hasattr(self, 'taint_policy_combo'):
+            policy_idx = self.taint_policy_combo.currentIndex()
+            policy_text = ['normal', 'strict', 'loose'][policy_idx]
+        
+        # 高级模式选项（向后兼容）
         enable_mem_taint = bool(getattr(self, 'enable_mem_taint_chk', None) and self.enable_mem_taint_chk.isChecked())
         track_constants = bool(getattr(self, 'track_constants_chk', None) and self.track_constants_chk.isChecked())
         advanced_mode = bool(getattr(self, 'advanced_mode_chk', None) and self.advanced_mode_chk.isChecked())
@@ -1166,8 +1223,16 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         except Exception:
             pass
             
-        # 根据是否启用高级模式选择不同的Worker
-        if advanced_mode and target_regs:
+        # 根据模式选择不同的Worker
+        if use_enhanced:
+            # 使用增强污点分析
+            self._taint_worker = EnhancedTaintWorker(
+                self.parser, start_idx, source_regs, source_addrs,
+                same_call, policy_text, show_confluence
+            )
+            self._taint_worker.finishedWithEnhancedResults.connect(self._on_enhanced_taint_ready)
+        elif advanced_mode and target_regs:
+            # 使用原高级模式
             self._taint_worker = AdvancedTaintWorker(
                 self.parser, start_idx, source_regs, source_addrs, 
                 target_regs, target_addrs, same_call, 
@@ -1175,6 +1240,7 @@ class ValueFlowDock(QtWidgets.QDockWidget):
             )
             self._taint_worker.finishedWithAdvancedResults.connect(self._on_advanced_taint_ready)
         else:
+            # 使用原基础模式
             self._taint_worker = TaintWorker(self.parser, start_idx, source_regs, source_addrs, same_call)
             self._taint_worker.finishedWithHits.connect(self._on_taint_ready)
         self._taint_worker.start()
@@ -1236,6 +1302,64 @@ class ValueFlowDock(QtWidgets.QDockWidget):
             QtWidgets.QMessageBox.information(self, '污点分析', '未命中污点相关事件')
             return
         self._populate_taint_results(hits)
+    
+    @QtCore.pyqtSlot(dict)
+    def _on_enhanced_taint_ready(self, results: dict) -> None:
+        """处理增强污点分析结果"""
+        self._set_busy(False)
+        hits = results.get("hits", [])
+        confluence_points = results.get("confluence_points", {})
+        propagation_count = results.get("propagation_count", 0)
+        
+        if not hits:
+            QtWidgets.QMessageBox.information(self, '增强污点分析', '未命中污点相关事件')
+            return
+        
+        # 显示统计信息
+        stats_msg = f"找到 {len(hits)} 个污点事件"
+        if propagation_count > 0:
+            stats_msg += f"\n• 污点传播次数: {propagation_count}"
+        if confluence_points:
+            stats_msg += f"\n• 污点汇合点: {len(confluence_points)} 个 ⭐"
+            stats_msg += "\n  (多个污点来源合并的关键计算点)"
+        
+        QtWidgets.QMessageBox.information(self, '增强污点分析完成', stats_msg)
+        
+        # 填充结果列表并高亮汇合点
+        self._populate_enhanced_taint_results(hits, confluence_points)
+    
+    def _populate_enhanced_taint_results(self, hits: list, confluence_points: dict) -> None:
+        """填充增强污点分析结果到列表，高亮汇合点"""
+        self.list.setUpdatesEnabled(False)
+        try:
+            self.list.clear()
+            for idx in hits:
+                ev = self.parser.events[idx]
+                rw = 'W' if ev.writes else ('R' if ev.reads else '')
+                tag = self._classify_tag(None, idx)
+                
+                # 标记汇合点
+                if idx in confluence_points:
+                    sources = confluence_points[idx]
+                    tag = f"⭐汇合点 ({len(sources)}源)"
+                
+                item = QtWidgets.QTreeWidgetItem([
+                    str(ev.line_no), f"0x{ev.pc:08x}", rw, tag, ev.asm,
+                    '', '', str(getattr(ev, 'call_id', 0)), 
+                    self._fmt_low8(None, idx), self._fmt_c_summary(ev.asm)
+                ])
+                item.setData(0, QtCore.Qt.UserRole, idx)
+                
+                # 汇合点用特殊颜色高亮
+                if idx in confluence_points:
+                    for col in range(self.list.columnCount()):
+                        item.setBackground(col, QtGui.QColor(255, 250, 205))  # 浅黄色
+                        item.setForeground(col, QtGui.QColor(139, 69, 19))    # 棕色
+                
+                self.list.addTopLevelItem(item)
+        finally:
+            self.list.setUpdatesEnabled(True)
+            self.list.viewport().update()
 
     def _show_code_dialog(self, title: str, default_name: str, file_filter: str, code: str) -> None:
         dlg = QtWidgets.QDialog(self)
@@ -1967,6 +2091,125 @@ class TaintWorker(QtCore.QThread):
             hits = []
         if not self.isInterruptionRequested():
             self.finishedWithHits.emit(hits)
+
+
+class EnhancedTaintWorker(QtCore.QThread):
+    """增强污点分析Worker"""
+    finishedWithEnhancedResults = QtCore.pyqtSignal(dict)
+    
+    def __init__(self, parser, start_idx: int, source_regs: List[str], source_mem_addrs: List[int],
+                 same_call: bool, policy: str, show_confluence: bool) -> None:
+        super().__init__()
+        self._parser = parser
+        self._start_idx = start_idx
+        self._source_regs = list(source_regs)
+        self._source_mem = list(source_mem_addrs)
+        self._same_call = same_call
+        self._policy = policy
+        self._show_confluence = show_confluence
+    
+    def run(self) -> None:
+        try:
+            from trace_viewer.enhanced_taint import EnhancedTaintAnalyzer, TaintPolicy
+            
+            # 转换策略
+            policy_map = {
+                'strict': TaintPolicy.STRICT,
+                'normal': TaintPolicy.NORMAL,
+                'loose': TaintPolicy.LOOSE
+            }
+            policy_enum = policy_map.get(self._policy, TaintPolicy.NORMAL)
+            
+            # 创建分析器
+            analyzer = EnhancedTaintAnalyzer(policy=policy_enum)
+            
+            # 设置污点源
+            for reg in self._source_regs:
+                analyzer.add_source('reg', reg, self._start_idx)
+            for addr in self._source_mem:
+                analyzer.add_source('mem', hex(addr), self._start_idx)
+            
+            # 遍历trace进行分析
+            hits = []
+            n = len(self._parser.events)
+            
+            # 边界检查
+            if n == 0 or self._start_idx >= n:
+                results = {"hits": [], "confluence_points": {}, "propagation_count": 0}
+                if not self.isInterruptionRequested():
+                    self.finishedWithEnhancedResults.emit(results)
+                return
+            
+            base_call = self._parser.events[self._start_idx].call_id
+            propagation_count = 0
+            
+            for i in range(self._start_idx, min(n, self._start_idx + 200000)):
+                if self.isInterruptionRequested():
+                    break
+                
+                event = self._parser.events[i]
+                
+                # 同调用限制
+                if self._same_call and getattr(event, 'call_id', 0) != base_call:
+                    continue
+                
+                asm = event.asm.lower()
+                propagated = False
+                
+                # 算术/逻辑运算
+                if any(asm.startswith(op) for op in ['add ', 'sub ', 'and ', 'orr ', 'eor ', 'mov ', 'mul ']):
+                    src_regs = list(event.reads.keys())
+                    dst_regs = list(event.writes.keys())
+                    if dst_regs:
+                        dst = dst_regs[0]
+                        is_partial = 'movk' in asm
+                        propagated = analyzer.propagate_reg_to_reg(i, src_regs, dst, is_partial)
+                
+                # 加载指令
+                elif asm.startswith('ldr'):
+                    if event.effaddr is not None and event.writes:
+                        dst_reg = list(event.writes.keys())[0]
+                        mem_size = getattr(event, 'mem_width', 4) or 4
+                        propagated = analyzer.propagate_mem_to_reg(i, event.effaddr, mem_size, dst_reg)
+                
+                # 存储指令
+                elif asm.startswith('str'):
+                    if event.effaddr is not None and event.reads:
+                        src_reg = list(event.reads.keys())[0]
+                        mem_size = getattr(event, 'mem_width', 4) or 4
+                        propagated = analyzer.propagate_reg_to_mem(i, src_reg, event.effaddr, mem_size)
+                
+                # 条件分支（隐式流）
+                elif any(asm.startswith(op) for op in ['cmp ', 'tst ', 'b.eq', 'b.ne', 'beq', 'bne']):
+                    cond_regs = list(event.reads.keys())
+                    analyzer.propagate_implicit_flow(i, cond_regs)
+                    # 检查是否受隐式污点影响
+                    if any(analyzer.is_reg_tainted(r) for r in cond_regs):
+                        propagated = True
+                
+                if propagated:
+                    hits.append(i)
+                    propagation_count += 1
+            
+            # 获取汇合点
+            confluence_points = {}
+            if self._show_confluence:
+                raw_confluence = analyzer.get_confluence_points()
+                for event_idx, sources_list in raw_confluence.items():
+                    # 简化数据结构用于传递
+                    confluence_points[event_idx] = sources_list
+            
+            results = {
+                "hits": hits,
+                "confluence_points": confluence_points,
+                "propagation_count": propagation_count
+            }
+            
+        except Exception as e:
+            results = {"hits": [], "confluence_points": {}, "propagation_count": 0, "error": str(e)}
+        
+        if not self.isInterruptionRequested():
+            self.finishedWithEnhancedResults.emit(results)
 
 
 class AdvancedTaintWorker(QtCore.QThread):
