@@ -451,7 +451,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         row = cursor.blockNumber()
         ev_idx = self._current_code_start + row
         if ev_idx < 0 or ev_idx >= len(self.parser.events):
-            menu.exec_(self.code_edit.mapToGlobal(pos))
+            menu.exec(self.code_edit.mapToGlobal(pos))
             return
         ev = self.parser.events[ev_idx]
         
@@ -465,7 +465,7 @@ class TraceViewer(QtWidgets.QMainWindow):
         act_export_c = QtGui.QAction('导出所选代码为伪C', menu)
         act_export_c.triggered.connect(self._export_selected_code_to_c)
         menu.addAction(act_export_c)
-        menu.exec_(self.code_edit.mapToGlobal(pos))
+        menu.exec(self.code_edit.mapToGlobal(pos))
 
     def _trace_with_input_dialog(self, ev_idx: int) -> None:
         """弹出对话框让用户输入寄存器名和值，然后进行反向追踪"""

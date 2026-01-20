@@ -67,20 +67,27 @@ class TraceParser:
     # 格式2 - JD trace格式 (ARM64):
     #   [14:07:57 422][0x29ce4] [e007bea9] 0x40029ce4: "stp x0, x1, [sp, #-0x20]!" ...
     
-    # 兼容两种格式的正则表达式
+    # 兼容多种格式的正则表达式（ARM32/Thumb/ARM64）
+    #
+    # 额外兼容点：
+    # - 部分 trace 文件前面会带一个“行号/序号”前缀（例如：`1165427 [16:58:52 663][libcms.so 0x25890] ...`）
+    #   这会导致旧版正则完全匹配失败，从而“只解析到极少数行/看起来像只命中前几行”。
     LINE_RE = re.compile(
-        r"^\[(?P<ts>[^\]]+)\]"  # 时间戳：支持十六进制或时分秒格式
-        r"\[(?P<mod>[^\]]+?)"   # 模块信息：可能包含空格和偏移，或只有偏移
+        r"^\s*(?:(?P<seq>\d+)\s+)?"   # 可选的前缀序号（不参与逻辑，仅用于兼容）
+        r"\[(?P<ts>[^\]]+)\]"         # 时间戳：支持十六进制或时分秒格式
+        r"\[(?P<mod>[^\]]+?)"         # 模块信息：可能包含空格和偏移，或只有偏移
         r"(?:\s+(?P<modoff>0x[0-9a-fA-F]+))?\]\s+"  # 可选的模块偏移
-        r"\[(?P<enc>[0-9a-fA-F]{4}(?:\s{0,4}[0-9a-fA-F]{0,4})?)\]\s+"  # 编码
+        r"\[(?P<enc>[0-9a-fA-F]{4,16}(?:\s+[0-9a-fA-F]{4})*)\]\s+"     # 编码（支持 4~16 hex，或多段）
         r"(?P<pc>0x[0-9a-fA-F]+):\s+"  # PC地址
-        r"\"(?P<asm>[^\"]+)\""  # 汇编指令
-        r"(?P<rest>.*)$"  # 其余部分
+        r"\"(?P<asm>[^\"]+)\""         # 汇编指令
+        r"(?P<rest>.*)$"               # 其余部分
     )
 
-    # 寄存器匹配：ARM32 的 r0..r15, sp, lr, pc, cpsr；兼容 ARM64 的 x0..x30 及 w0..w30
-    REG_PAIR_RE = re.compile(r"\b([rxw][0-9]{1,2}|sp|lr|pc|cpsr)=0x[0-9a-fA-F]+\b")
-    REG_NAME_RE = re.compile(r"^([rxw][0-9]{1,2}|sp|lr|pc|cpsr)=")
+    # 寄存器匹配：
+    # - ARM32: r0..r15, sp/lr/pc/cpsr，以及常见别名 ip/sb/sl/fp
+    # - ARM64: x0..x30, w0..w30, sp/lr/fp，以及零寄存器 xzr/wzr（某些 trace 会打印）
+    REG_PAIR_RE = re.compile(r"\b([rxw][0-9]{1,2}|sp|lr|pc|cpsr|ip|sb|sl|fp|xzr|wzr)=0x[0-9a-fA-F]+\b")
+    REG_NAME_RE = re.compile(r"^([rxw][0-9]{1,2}|sp|lr|pc|cpsr|ip|sb|sl|fp|xzr|wzr)=")
     HEX_RE = re.compile(r"0x[0-9a-fA-F]+")
 
     BRANCH_TARGET_RE = re.compile(r"\b(b|bl|beq|bne|bhi|blo|bge|blt|bpl|bmi)\s+#?(0x[0-9a-fA-F]+)\b")
@@ -434,16 +441,25 @@ class TraceParser:
         return ev
 
     def _parse_regs(self, rest: str) -> Tuple[Dict[str, int], Dict[str, int]]:
-        # 解析寄存器对；若出现 '=> rX=0x..' 视为写寄存器（右侧），左侧视为读
-        reads: Dict[str, int] = {}
-        writes: Dict[str, int] = {}
+        """解析寄存器对，返回 (reads, writes)。
+
+        Unidbg trace 的右侧（=>）是“执行后状态”，经常会把**未变化的寄存器**也打印出来。
+        若直接把右侧全部当成 writes，会导致溯源/污点出现大量“伪定义点”，链路不准确。
+
+        规则：
+        - left 解析为执行前（pre）
+        - right 解析为执行后（post）
+        - 仅当 post 中某寄存器的值与 pre 不同，才视为 write；否则视为 read（或保持在 read）。
+        """
+        pre: Dict[str, int] = {}
+        post: Dict[str, int] = {}
 
         if '=>' in rest:
             left, right = rest.split('=>', 1)
         else:
             left, right = rest, ''
 
-        for seg, target in ((left, reads), (right, writes)):
+        for seg, target in ((left, pre), (right, post)):
             for m in self.REG_PAIR_RE.finditer(seg):
                 pair = m.group(0)
                 name_m = self.REG_NAME_RE.match(pair)
@@ -465,6 +481,18 @@ class TraceParser:
                         self.arch = 'arm64'
                     elif lname.startswith('r') and self.arch != 'arm64':
                         self.arch = 'arm32'
+
+        reads: Dict[str, int] = dict(pre)
+        writes: Dict[str, int] = {}
+        for k, v in post.items():
+            pv = pre.get(k)
+            if pv is None:
+                writes[k] = v
+            elif pv != v:
+                writes[k] = v
+            else:
+                # 未变化：保持为 read（某些 trace 只在右侧出现，也补进 reads）
+                reads.setdefault(k, v)
 
         return reads, writes
 
@@ -703,10 +731,47 @@ class TraceParser:
         s = asm.strip().lower()
         if not s.startswith('str'):
             return None
-        m = re.match(r"^str\w*\s+([rxw][0-9]{1,2})\s*,\s*\[", s)
+        m = re.match(r"^str\w*\.?\w*\s+([rxw][0-9]{1,2}|sp|lr|pc|ip|sb|sl|fp|xzr|wzr)\s*,\s*\[", s)
         if not m:
             return None
         return m.group(1)
+
+    def _parse_store_value_regs(self, asm: str) -> List[str]:
+        """解析 store 指令写入内存的源寄存器列表（用于溯源/反向 slice）。
+
+        支持：
+        - `str*` / `stur*`：返回单寄存器
+        - `strd`：返回两个寄存器（ARM32）
+        - `stp/stnp`：返回两个寄存器（ARM64）
+        - `push`：返回寄存器列表（ARM32/Thumb）
+        """
+        s = (asm or '').strip().lower()
+        if not s:
+            return []
+        # push {..}
+        if s.startswith('push'):
+            return [r.lower() for r in self._parse_register_list(s)]
+        # strd r0, r1, [...]
+        if s.startswith('strd'):
+            a, b = self._parse_dual_regs(s)
+            out: List[str] = []
+            if a:
+                out.append(a.lower())
+            if b:
+                out.append(b.lower())
+            return out
+        # stp/stnp x0, x1, [...]
+        if s.startswith('stp') or s.startswith('stnp'):
+            m = re.match(r'^(stp|stnp)\s+([xw]\d{1,2}|fp|lr)\s*,\s*([xw]\d{1,2}|fp|lr)\s*,\s*\[', s)
+            if m:
+                return [m.group(2).lower(), m.group(3).lower()]
+            return []
+        # stur/str/strb/strh/str.w/...：取第一个操作数
+        if s.startswith('str') or s.startswith('stur'):
+            m = re.match(r"^(?:stur|str)\w*\.?\w*\s+([rxw][0-9]{1,2}|sp|lr|pc|ip|sb|sl|fp|xzr|wzr)\s*,\s*\[", s)
+            if m:
+                return [m.group(1).lower()]
+        return []
 
     def _find_prev_store_to_address(self, addr: int, from_index_exclusive: int, max_steps: int = 1500, same_call_id: Optional[int] = None) -> Optional[int]:
         # 若有地址索引，直接在列表中二分回溯
@@ -737,6 +802,83 @@ class TraceParser:
             if a == addr:
                 return j
         return None
+
+    def _find_prev_store_covering_range(self, addr: int, size: int, from_index_exclusive: int, same_call_id: Optional[int] = None) -> Optional[int]:
+        """在 from_index_exclusive 之前，寻找能覆盖 [addr, addr+size) 的最近 store 事件。
+
+        依赖：`store_addr_index` 是按字节建立的倒排索引；这里通过聚合每个字节命中的 store，
+        选择“覆盖字节最多、且最接近”的那个 store，从而提升溯源链路准确性（尤其 ldrb/ldrh/ldp/ldrd）。
+        """
+        try:
+            size_i = int(size)
+        except Exception:
+            size_i = 1
+        if size_i <= 0:
+            size_i = 1
+        base = addr & 0xFFFFFFFF
+        counts: Dict[int, int] = {}
+        from bisect import bisect_left
+        for off in range(size_i):
+            a = (base + off) & 0xFFFFFFFF
+            lst = self.store_addr_index.get(a)
+            if not lst:
+                continue
+            pos = bisect_left(lst, from_index_exclusive) - 1
+            while pos >= 0:
+                j = lst[pos]
+                if same_call_id is not None and self.events[j].call_id != same_call_id:
+                    pos -= 1
+                    continue
+                counts[j] = counts.get(j, 0) + 1
+                break
+        if not counts:
+            return None
+        return max(counts.keys(), key=lambda j: (counts.get(j, 0), j))
+
+    def _extract_source_regs_for_provenance(self, asm: str, dst_reg: str) -> List[str]:
+        """溯源专用：从 asm 文本抽取“更可信的源寄存器集合”，减少误把无关读集加入链路。"""
+        s = (asm or '').strip().lower()
+        if not s:
+            return []
+        mnem = s.split()[0]
+        if mnem in ('b', 'bl', 'bx', 'ret', 'nop', 'it', 'itt', 'ite', 'cbz', 'cbnz', 'tbz', 'tbnz'):
+            return []
+
+        # 栈指针更新：push/pop/sub sp/add sp 等，sp 只依赖旧 sp（避免把寄存器列表误当成依赖）
+        dst = (dst_reg or '').strip().lower()
+        if dst in ('sp', 'r13'):
+            if mnem.startswith('push') or mnem.startswith('pop'):
+                return ['sp']
+            if mnem in ('sub', 'add') and (' sp' in f' {s} ' or s.startswith(f'{mnem} sp,')):
+                return ['sp']
+
+        reg_tokens = re.findall(r"\b(?:[rxw]\d{1,2}|sp|lr|pc|ip|sb|sl|fp|cpsr|xzr|wzr)\b", s)
+        regs = [r.lower() for r in reg_tokens if r]
+        regs = [r for r in regs if r != 'cpsr']
+
+        if mnem in ('cmp', 'tst', 'cmn'):
+            return regs
+
+        out = [r for r in regs if not dst or r != dst]
+
+        # 部分覆盖：旧 dst 也参与依赖
+        if mnem in ('movk', 'bfi', 'bfc', 'ubfm', 'sbfm', 'bfm'):
+            if dst and dst not in out:
+                out.append(dst)
+
+        # 条件选择：优先使用解析器
+        if self._is_conditional_select_op(s):
+            rd, rn, rm = self._parse_csel_operands(s)
+            tmp = []
+            for r in (rn, rm):
+                if r:
+                    rr = r.lower()
+                    if dst and rr == dst:
+                        continue
+                    tmp.append(rr)
+            return tmp
+
+        return out
 
     def build_value_chain_phase1(self, reg: str, start_idx: int, value_u32: int, side: str = '执行前') -> List[int]:
         """第一阶段：内存感知的值链追踪。
@@ -916,31 +1058,51 @@ class TraceParser:
             if self._is_constant_zero_write(ev, cur_reg) or self._is_immediate_write(ev, cur_reg):
                 continue
 
-            # ldr：回溯 store 源
-            if s.startswith('ldr') and self._has_write(ev, cur_reg):
-                addr = self.effective_address(cur_idx)
-                if addr is None:
-                    # 地址不可解析，视为叶子
+            # ldr/ldrd/ldp：回溯 store 源（按访问宽度寻找覆盖写入，提升准确性）
+            if (s.startswith('ldr') or s.startswith('ldrd') or s.startswith('ldp') or s.startswith('ldnp')) and self._has_write(ev, cur_reg):
+                addr0 = self.effective_address(cur_idx)
+                if addr0 is None:
                     continue
-                store_idx = self._find_prev_store_to_address(addr, cur_idx, same_call_id=ev.call_id)
+                width = int(getattr(ev, 'mem_width', 0) or 0)
+                if width <= 0:
+                    width = self._get_mem_access_width(s)
+
+                addr = addr0
+                if s.startswith('ldrd'):
+                    r1, r2 = self._parse_dual_regs(s)
+                    if r2 and cur_reg == (r2 or '').lower():
+                        addr = (addr0 + 4) & 0xFFFFFFFF
+                    width = 4
+                elif s.startswith('ldp') or s.startswith('ldnp'):
+                    m = re.match(r'^(ldp|ldnp)\s+([xw]\d{1,2}|fp|lr)\s*,\s*([xw]\d{1,2}|fp|lr)\s*,\s*\[', s)
+                    if m:
+                        a = m.group(2).lower()
+                        b = m.group(3).lower()
+                        unit = 8 if (a.startswith('x') or a in ('fp', 'lr')) else 4
+                        if cur_reg == b:
+                            addr = (addr0 + unit) & 0xFFFFFFFF
+                        width = unit
+
+                store_idx = self._find_prev_store_covering_range(addr, width, cur_idx, same_call_id=ev.call_id)
                 if store_idx is None:
-                    store_idx = self._find_prev_store_to_address(addr, cur_idx, max_steps=6000, same_call_id=None)
+                    store_idx = self._find_prev_store_covering_range(addr, width, cur_idx, same_call_id=None)
                 if store_idx is not None:
                     if store_idx not in nodes:
                         nodes.append(store_idx)
-                    src_reg = self._parse_store_value_reg(self.events[store_idx].asm)
-                    if src_reg:
+                    for src_reg in self._parse_store_value_regs(self.events[store_idx].asm):
                         prev = self.find_prev_write(src_reg, store_idx)
                         if prev is not None:
                             work.append((src_reg, prev))
                 continue
 
-            # 算术/位运算：回溯所有读取寄存器
-            if ev.reads:
-                for src_reg in list(ev.reads.keys()):
-                    prev = self.find_prev_write(src_reg, cur_idx)
-                    if prev is not None:
-                        work.append((src_reg, prev))
+            # 算术/位运算：回溯源寄存器（优先从 asm 抽取，减少误链）
+            src_regs = self._extract_source_regs_for_provenance(ev.asm, cur_reg)
+            if not src_regs and ev.reads:
+                src_regs = list(ev.reads.keys())
+            for src_reg in src_regs:
+                prev = self.find_prev_write(src_reg, cur_idx)
+                if prev is not None:
+                    work.append((src_reg, prev))
 
         # 输出按事件时间排序，去重
         nodes = sorted(set(nodes))
@@ -1018,31 +1180,52 @@ class TraceParser:
             if self._is_constant_zero_write(ev, cur_reg) or self._is_immediate_write(ev, cur_reg):
                 continue
 
-            if s.startswith('ldr') and self._has_write(ev, cur_reg):
-                addr = self.effective_address(cur_idx)
-                if addr is None:
+            if (s.startswith('ldr') or s.startswith('ldrd') or s.startswith('ldp') or s.startswith('ldnp')) and self._has_write(ev, cur_reg):
+                addr0 = self.effective_address(cur_idx)
+                if addr0 is None:
                     continue
-                store_idx = self._find_prev_store_to_address(addr, cur_idx, same_call_id=ev.call_id)
+                width = int(getattr(ev, 'mem_width', 0) or 0)
+                if width <= 0:
+                    width = self._get_mem_access_width(s)
+
+                addr = addr0
+                if s.startswith('ldrd'):
+                    r1, r2 = self._parse_dual_regs(s)
+                    if r2 and cur_reg == (r2 or '').lower():
+                        addr = (addr0 + 4) & 0xFFFFFFFF
+                    width = 4
+                elif s.startswith('ldp') or s.startswith('ldnp'):
+                    m = re.match(r'^(ldp|ldnp)\s+([xw]\d{1,2}|fp|lr)\s*,\s*([xw]\d{1,2}|fp|lr)\s*,\s*\[', s)
+                    if m:
+                        a = m.group(2).lower()
+                        b = m.group(3).lower()
+                        unit = 8 if (a.startswith('x') or a in ('fp', 'lr')) else 4
+                        if cur_reg == b:
+                            addr = (addr0 + unit) & 0xFFFFFFFF
+                        width = unit
+
+                store_idx = self._find_prev_store_covering_range(addr, width, cur_idx, same_call_id=ev.call_id)
                 if store_idx is None:
-                    store_idx = self._find_prev_store_to_address(addr, cur_idx, max_steps=6000, same_call_id=None)
+                    store_idx = self._find_prev_store_covering_range(addr, width, cur_idx, same_call_id=None)
                 if store_idx is not None:
                     if store_idx not in nodes:
                         nodes.append(store_idx)
-                    edges.append(('mem', store_idx, cur_idx, f"0x{addr & 0xFFFFFFFF:08x}"))
-                    src_reg = self._parse_store_value_reg(self.events[store_idx].asm)
-                    if src_reg:
+                    edges.append(('mem', store_idx, cur_idx, f"0x{addr & 0xFFFFFFFF:08x}[{int(width)}]"))
+                    for src_reg in self._parse_store_value_regs(self.events[store_idx].asm):
                         prev = self.find_prev_write(src_reg, store_idx)
                         if prev is not None:
                             edges.append(('data', prev, store_idx, src_reg))
                             work.append((src_reg, prev))
                 continue
 
-            if ev.reads:
-                for src_reg in list(ev.reads.keys()):
-                    prev = self.find_prev_write(src_reg, cur_idx)
-                    if prev is not None:
-                        edges.append(('data', prev, cur_idx, src_reg))
-                        work.append((src_reg, prev))
+            src_regs = self._extract_source_regs_for_provenance(ev.asm, cur_reg)
+            if not src_regs and ev.reads:
+                src_regs = list(ev.reads.keys())
+            for src_reg in src_regs:
+                prev = self.find_prev_write(src_reg, cur_idx)
+                if prev is not None:
+                    edges.append(('data', prev, cur_idx, src_reg))
+                    work.append((src_reg, prev))
 
         nodes = sorted(set(nodes))
         # 去重 edges（稳定顺序）
@@ -1094,11 +1277,14 @@ class TraceParser:
         s = evw.asm.lower()
         regs_at = self.reconstruct_regs_at(writer_idx)
 
-        # 1) ldr 直接来源：有效地址
-        if s.startswith('ldr') and self._has_write(evw, reg):
+        # 1) ldr/ldrd/ldp 直接来源：有效地址（含访问宽度）
+        if (s.startswith('ldr') or s.startswith('ldrd') or s.startswith('ldp') or s.startswith('ldnp')) and self._has_write(evw, reg):
             addr = self.effective_address(writer_idx)
+            width = int(getattr(evw, 'mem_width', 0) or 0)
+            if width <= 0:
+                width = self._get_mem_access_width(s)
             if addr is not None:
-                result['direct'] = f"从内存 0x{addr:08x} 加载"
+                result['direct'] = f"从内存 0x{addr:08x}[{int(width)}] 加载"
                 # 尝试构造 base/index/imm 解释（粗略从 reads 取前两个）
                 reads = list(evw.reads.keys())
                 base = reads[0] if reads else None
@@ -1111,8 +1297,8 @@ class TraceParser:
                         result['indirect'].append(f"地址依赖：{ctx}, {index}=0x{(ival or 0):08x}")
                     else:
                         result['indirect'].append(f"地址依赖：{ctx}")
-                # 缺口：该地址上一次写入
-                result['gaps'].append({'type': 'mem', 'addr': f"0x{addr:08x}", 'hint': '查找更早的 store/写入'})
+                # 缺口：该地址上一次写入（按范围）
+                result['gaps'].append({'type': 'mem', 'addr': f"0x{addr:08x}[{int(width)}]", 'hint': '查找更早的 store/写入'})
             return result
 
         # 2) 立即数 / 恒零
@@ -1331,7 +1517,7 @@ class TraceParser:
         s = asm.lower().strip()
         
         # 提取花括号内的内容
-        m = _re.search(r'\{([^}]+)\}', s)
+        m = re.search(r'\{([^}]+)\}', s)
         if not m:
             return []
         
@@ -1355,7 +1541,7 @@ class TraceParser:
                 # 单个寄存器
                 if part in ('r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9',
                            'r10', 'r11', 'r12', 'r13', 'r14', 'r15',
-                           'sp', 'lr', 'pc', 'cpsr') or \
+                           'sp', 'lr', 'pc', 'cpsr', 'ip', 'sb', 'sl', 'fp', 'xzr', 'wzr') or \
                    re.match(r'^[xw]\d{1,2}$', part):
                     regs.append(part)
         
@@ -1564,7 +1750,8 @@ class TraceParser:
             return cached
         ev = self.events[event_index]
         asm = ev.asm.lower()
-        if not (asm.startswith('str') or asm.startswith('ldr')):
+        # 覆盖更多访存类助记符（ARM32/ARM64）
+        if not any(asm.startswith(p) for p in ('str', 'ldr', 'stur', 'ldur', 'stp', 'stnp', 'ldp', 'ldnp', 'strd', 'ldrd')):
             return None
         # 优先尝试解码器（若可用），并记录退化原因
         try:
@@ -1617,10 +1804,19 @@ class TraceParser:
             return None
         expr = asm[lb + 1:rb].strip()
         suffix = asm[rb + 1:].strip()  # 处理 post-index 形式：], #imm
-        regs = self.reconstruct_regs_at(event_index)
+        # 注意：有效地址必须使用“执行前”的寄存器值。
+        # 对于 ldr/ldrb 等指令，目的寄存器会被写入新值，如果误用“执行后”的寄存器状态，
+        # 会把索引寄存器当成新值（例如：ldr r1, [r0, r1, lsl #2] 执行后 r1 会变成加载值），
+        # 从而导致 effaddr 严重错误（我们在 fanqie_trace 中实测会出现 base+(0xdc<<2) 这种错位）。
+        regs_after = self.reconstruct_regs_at(event_index)
 
         def getv(rname: str):
-            return regs.get(rname.strip().lower())
+            rn = rname.strip().lower()
+            # 优先使用 trace 行里解析出的 reads（即执行前寄存器值）
+            if rn in ev.reads:
+                return ev.reads.get(rn)
+            # 兜底：使用复原状态（可能是执行后，但总比 None 好）
+            return regs_after.get(rn)
 
         # 统一解析：base + (index << shift) + imm, ARM64 变体（含 uxtw/sxtw/sxtx/lsl），以及 pre/post-index
         try:
@@ -1657,13 +1853,13 @@ class TraceParser:
                             shift = int(parts[2].split('#')[-1], 0)
                         except Exception:
                             shift = shift
-            # 4) pre-index: 以 ']' 后紧跟 '!' 表示，实际地址为 base+imm
+            # 4) pre-index: 以 ']' 后紧跟 '!' 表示，会“回写” base，但本次有效地址仍然是 base + imm (+ index<<shift)
             pre_index = '!' in asm[lb:rb+1]
             # 5) post-index: '], #imm' 出现在后缀；实际地址为 base（本次访存使用旧 base）
             post_index_imm = 0
             if suffix.startswith(',') and '# ' in suffix.replace('#', ' #'):
                 try:
-                    m = _re.search(r",\s*#\s*([+-]?(?:0x[0-9a-fA-F]+|\d+))", suffix)
+                    m = re.search(r",\s*#\s*([+-]?(?:0x[0-9a-fA-F]+|\d+))", suffix)
                     if m:
                         post_index_imm = int(m.group(1), 0)
                 except Exception:
@@ -1673,7 +1869,12 @@ class TraceParser:
             i = getv(index or '') if index else 0
             if b is None:
                 return None
-            addr = (b + ((i or 0) << (shift or 0)) + (imm if pre_index else 0)) & 0xFFFFFFFF
+            # 关键修复：
+            # - 普通寻址 [base, #imm] / [base, index] / [base, index, lsl #n] 的 imm 总是参与有效地址计算；
+            # - pre/post-index 的差别在于是否回写 base（trace 层面通常只需要“本次访存地址”）。
+            # 旧实现错误地仅在 pre-index 时才加 imm，导致大量 [r7, #-0x24] 这类常见形式解析失败，
+            # 进而影响 store_addr_index、污点传播与回溯定位。
+            addr = (b + ((i or 0) << (shift or 0)) + (imm or 0)) & 0xFFFFFFFF
             # post-index 不影响本次有效地址
             res = addr
             self._effaddr_cache[event_index] = res
@@ -1708,39 +1909,66 @@ class TraceParser:
             self.store_addr_index.clear()
             for idx, ev in enumerate(self.events):
                 s = ev.asm.lower()
-                if not (s.startswith('ldr') or s.startswith('str')):
+                if not any(s.startswith(p) for p in ('ldr', 'str', 'ldur', 'stur', 'ldp', 'ldnp', 'stp', 'stnp', 'ldrd', 'strd', 'push')):
                     continue
                 # 计算并缓存有效地址
-                addr = self.effective_address(idx)
+                addr = None
+                if s.startswith('push'):
+                    # push/push.w：用 sp(before/after) 推导写入区间起始地址（使用 after sp）
+                    sp_after = ev.writes.get('sp')
+                    if sp_after is None:
+                        sp_after = self.reconstruct_regs_at(idx).get('sp')
+                    addr = (sp_after & 0xFFFFFFFF) if sp_after is not None else None
+                else:
+                    addr = self.effective_address(idx)
                 ev.effaddr = addr
                 # 标注访存类型与宽度
                 try:
-                    ev.mem_op = 'ldr' if s.startswith('ldr') else ('str' if s.startswith('str') else '')
+                    if s.startswith(('ldr', 'ldur', 'ldp', 'ldnp', 'ldrd')):
+                        ev.mem_op = 'ldr'
+                    elif s.startswith(('str', 'stur', 'stp', 'stnp', 'strd', 'push')):
+                        ev.mem_op = 'str'
+                    else:
+                        ev.mem_op = ''
                     # 优先依据助记符中的后缀判定宽度（b/h -> 1/2），否则依据目的/源寄存器名称宽度
                     width = 0
                     mnem = s.split()[0]
-                    if mnem.startswith('ldrb') or mnem.startswith('strb'):
+                    if mnem.startswith(('ldrb', 'ldurb', 'strb', 'sturb')):
                         width = 1
-                    elif mnem.startswith('ldrh') or mnem.startswith('strh'):
+                    elif mnem.startswith(('ldrh', 'ldurh', 'strh', 'sturh')):
                         width = 2
+                    elif mnem.startswith(('ldrd', 'strd')):
+                        width = 8
+                    elif mnem.startswith(('ldp', 'ldnp', 'stp', 'stnp')):
+                        # 成对访存：宽度取两寄存器之和
+                        mm = re.match(r'^(ldp|ldnp|stp|stnp)\s+([xw]\d{1,2}|fp|lr)\s*,\s*([xw]\d{1,2}|fp|lr)\s*,', s)
+                        if mm:
+                            r1 = mm.group(2).lower()
+                            unit = 8 if (r1.startswith('x') or r1 in ('fp', 'lr')) else 4
+                            width = unit * 2
                     else:
-                        # 依据寄存器名推断：xN -> 8 ; wN/rN -> 4
-                        # 对于访存，首参通常为寄存器（ldr/str 的 rd 或 rn）
-                        try:
-                            ops_txt = ev.asm.split(None, 1)[1]
-                            first_op = ops_txt.split(',')[0].strip()
-                            if first_op.startswith('x'):
-                                width = 8
-                            else:
+                        if s.startswith('push'):
+                            # ARM32 push：每个寄存器 4 字节
+                            regs = self._parse_register_list(s)
+                            width = max(1, 4 * len(regs))
+                        else:
+                            # 依据寄存器名推断：xN -> 8 ; wN/rN -> 4
+                            # 对于访存，首参通常为寄存器（ldr/str 的 rd 或 rn）
+                            try:
+                                ops_txt = ev.asm.split(None, 1)[1]
+                                first_op = ops_txt.split(',')[0].strip()
+                                if first_op.startswith('x'):
+                                    width = 8
+                                else:
+                                    width = 4
+                            except Exception:
                                 width = 4
-                        except Exception:
-                            width = 4
                     ev.mem_width = width
                 except Exception:
                     ev.mem_op = ev.mem_op or ''
                     ev.mem_width = ev.mem_width or 0
                 # 仅索引 store，且按字节跨度建立覆盖索引，便于 ldrb/ldrh 反查到此前的宽写入
-                if addr is not None and s.startswith('str'):
+                if addr is not None and any(s.startswith(p) for p in ('str', 'stur', 'stp', 'stnp', 'strd', 'push')):
                     span = max(1, int(ev.mem_width or 1))
                     base = addr & 0xFFFFFFFF
                     for off in range(span):
@@ -2047,7 +2275,8 @@ class TraceParser:
     # === 寄存器别名（ARM64）与读写获取 ===
     def _alias_names(self, name: str) -> List[str]:
         """返回寄存器名称的别名集合（含自身）。
-        - ARM64: wN/xN 互为别名；其它名称原样返回。
+        - ARM64: wN/xN 互为别名；fp/lr 与 x29/x30 互通；xzr/wzr 互通
+        - ARM32: sp/lr/pc/ip/fp/sb/sl 与 r13/r14/r15/r12/r11/r9/r10 互通
         - 使用缓存优化性能（热路径函数）
         """
         # 快速缓存查找
@@ -2056,12 +2285,51 @@ class TraceParser:
         
         try:
             n = (name or '').strip().lower()
+            result: List[str] = []
+            def _add(x: str) -> None:
+                x = (x or '').strip().lower()
+                if x and x not in result:
+                    result.append(x)
+
+            _add(n)
+
+            # ARM64 w/x
             if n.startswith('x') and n[1:].isdigit():
-                result = [n, f"w{n[1:]}"]
+                _add(f"w{n[1:]}")
             elif n.startswith('w') and n[1:].isdigit():
-                result = [n, f"x{n[1:]}"]
-            else:
-                result = [n]
+                _add(f"x{n[1:]}")
+            elif n == 'xzr':
+                _add('wzr')
+            elif n == 'wzr':
+                _add('xzr')
+
+            arch = self.arch if self.arch in ('arm32', 'arm64') else 'auto'
+            if arch in ('arm32', 'auto'):
+                arm32_map = {
+                    'sp': 'r13', 'r13': 'sp',
+                    'lr': 'r14', 'r14': 'lr',
+                    'pc': 'r15', 'r15': 'pc',
+                    'ip': 'r12', 'r12': 'ip',
+                    'fp': 'r11', 'r11': 'fp',
+                    'sb': 'r9',  'r9': 'sb',
+                    'sl': 'r10', 'r10': 'sl',
+                }
+                if n in arm32_map:
+                    _add(arm32_map[n])
+
+            if arch in ('arm64', 'auto'):
+                arm64_map = {
+                    'fp': 'x29', 'x29': 'fp',
+                    'lr': 'x30', 'x30': 'lr',
+                }
+                if n in arm64_map:
+                    _add(arm64_map[n])
+                    # 进一步补 w/x 别名
+                    v = arm64_map[n]
+                    if v.startswith('x') and v[1:].isdigit():
+                        _add(f"w{v[1:]}")
+                    if n.startswith('x') and n[1:].isdigit():
+                        _add(f"w{n[1:]}")
             
             # 缓存结果（限制缓存大小避免内存泄漏）
             if len(self._alias_cache) < 256:
@@ -2535,7 +2803,7 @@ class TraceParser:
             "final_tainted_mem": list(tainted_mem)
         }
 
-    def find_value_candidates(self, reg: str, value: int) -> List[Tuple[int, 'TraceEvent']]:
+    def find_value_candidates(self, reg: str, value: int, *, side: str = '任意') -> List[Tuple[int, 'TraceEvent']]:
         """查找所有匹配指定寄存器和值的事件候选。
         
         使用倒排索引快速定位，返回所有匹配的事件及其索引。
@@ -2543,6 +2811,7 @@ class TraceParser:
         Args:
             reg: 寄存器名（如 'r1', 'x0'）
             value: 目标值（32位）
+            side: '执行前' | '执行后' | '任意'（默认）。仅关注执行前时请传 '执行前'。
             
         Returns:
             [(idx, ev), ...] 按原始行号排序的候选列表
@@ -2552,30 +2821,37 @@ class TraceParser:
         candidates = []
         seen = set()
         
-        # 从读索引和写索引中查找
-        for idx in (self.reg_read_index.get(reg, []) or []):
-            if idx in seen:
-                continue
-            ev = self.events[idx]
-            try:
-                b = self._get_read_value(ev, reg)
-            except Exception:
-                b = ev.reads.get(reg)
-            if b is not None and (b & 0xFFFFFFFF) == value_u32:
-                candidates.append((idx, ev))
-                seen.add(idx)
-        
-        for idx in (self.reg_write_index.get(reg, []) or []):
-            if idx in seen:
-                continue
-            ev = self.events[idx]
-            try:
-                a = self._get_write_value(ev, reg)
-            except Exception:
-                a = ev.writes.get(reg)
-            if a is not None and (a & 0xFFFFFFFF) == value_u32:
-                candidates.append((idx, ev))
-                seen.add(idx)
+        side_norm = (side or '任意').strip()
+        want_reads = side_norm in ('执行前', '任意')
+        want_writes = side_norm in ('执行后', '任意')
+
+        # 从读索引中查找（执行前）
+        if want_reads:
+            for idx in (self.reg_read_index.get(reg, []) or []):
+                if idx in seen:
+                    continue
+                ev = self.events[idx]
+                try:
+                    b = self._get_read_value(ev, reg)
+                except Exception:
+                    b = ev.reads.get(reg)
+                if b is not None and (b & 0xFFFFFFFF) == value_u32:
+                    candidates.append((idx, ev))
+                    seen.add(idx)
+
+        # 从写索引中查找（执行后）
+        if want_writes:
+            for idx in (self.reg_write_index.get(reg, []) or []):
+                if idx in seen:
+                    continue
+                ev = self.events[idx]
+                try:
+                    a = self._get_write_value(ev, reg)
+                except Exception:
+                    a = ev.writes.get(reg)
+                if a is not None and (a & 0xFFFFFFFF) == value_u32:
+                    candidates.append((idx, ev))
+                    seen.add(idx)
         
         # 按索引排序（即按执行顺序）
         candidates.sort(key=lambda x: x[0])

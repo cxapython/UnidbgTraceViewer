@@ -189,6 +189,43 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         # 内存对比已禁用，这里保留接口但不使用 eval_effaddr_cb
         self.eval_effaddr_cb = eval_effaddr_cb
 
+    def _find_anchor_event_index(self) -> Optional[int]:
+        """尽量从主窗口获取“当前代码区锚点”的事件索引。
+
+        说明：
+        - ValueFlowDock 的 parent 可能是 QDockWidget/中间容器，不一定直接是 MainWindow；
+        - 历史上曾使用 `_get_current_event_index`，但当前主窗口对外接口是 `current_event_index()`；
+        - 这里做父链遍历，找到任意提供上述接口的对象即可。
+        """
+        # 1) 沿 parent() 链向上找
+        w = self
+        while w is not None:
+            try:
+                if hasattr(w, 'current_event_index'):
+                    idx = w.current_event_index()  # type: ignore[attr-defined]
+                    if isinstance(idx, int):
+                        return idx
+                if hasattr(w, '_get_current_event_index'):
+                    idx = w._get_current_event_index()  # type: ignore[attr-defined]
+                    if isinstance(idx, int):
+                        return idx
+            except Exception:
+                pass
+            try:
+                w = w.parent()  # type: ignore[assignment]
+            except Exception:
+                break
+        # 2) 兜底：尝试 activeWindow（有些平台 parent 链不稳定）
+        try:
+            aw = QtWidgets.QApplication.activeWindow()
+            if aw is not None and hasattr(aw, 'current_event_index'):
+                idx = aw.current_event_index()  # type: ignore[attr-defined]
+                if isinstance(idx, int):
+                    return idx
+        except Exception:
+            pass
+        return None
+
     def _on_trace_backward(self, anchor_idx: Optional[int] = None, exact_mode: bool = False) -> None:
         """反向追踪值来源的主入口
         
@@ -213,14 +250,9 @@ class ValueFlowDock(QtWidgets.QDockWidget):
             QtWidgets.QMessageBox.warning(self, '值格式错误', '请输入十六进制值，例如 0x4 或 4')
             return
         
-        # 如果没有提供锚点，尝试从主窗口获取当前选中的行作为锚点
-        if anchor_idx is None and self.parent():
-            try:
-                main_window = self.parent()
-                if hasattr(main_window, '_get_current_event_index'):
-                    anchor_idx = main_window._get_current_event_index()
-            except Exception:
-                pass
+        # 如果没有提供锚点，尝试从主窗口获取当前代码区锚点
+        if anchor_idx is None:
+            anchor_idx = self._find_anchor_event_index()
         
         # 精确模式：直接使用锚点作为起点，不查找其他候选
         if exact_mode and anchor_idx is not None and 0 <= anchor_idx < len(self.parser.events):
@@ -264,7 +296,8 @@ class ValueFlowDock(QtWidgets.QDockWidget):
                 return  # 用户取消
         else:
             # 没有锚点，使用原有逻辑：查找所有匹配 reg=value 的事件
-            candidates = self.parser.find_value_candidates(reg, match_val)
+            # 仅关注“执行前”的值（reads）：避免把“执行后写入产生的同值”也当作候选，导致误选/跑偏
+            candidates = self.parser.find_value_candidates(reg, match_val, side='执行前')
             
             if not candidates:
                 # 诊断信息：检查索引是否存在
@@ -1201,15 +1234,10 @@ class ValueFlowDock(QtWidgets.QDockWidget):
         track_constants = bool(getattr(self, 'track_constants_chk', None) and self.track_constants_chk.isChecked())
         advanced_mode = bool(getattr(self, 'advanced_mode_chk', None) and self.advanced_mode_chk.isChecked())
         
-        # 若外部窗口提供当前代码区锚点，则优先以该行作为起点
-        try:
-            parent = self.parent()
-            if hasattr(parent, 'current_event_index'):
-                idx = parent.current_event_index()
-                if isinstance(idx, int):
-                    start_idx = idx
-        except Exception:
-            pass
+        # 若主窗口提供当前代码区锚点，则优先以该行作为起点（避免默认从 0 开始导致“只看到开头几行”）
+        idx = self._find_anchor_event_index()
+        if isinstance(idx, int):
+            start_idx = idx
         self._set_busy(True)
         try:
             if hasattr(self, '_taint_worker') and self._taint_worker and self._taint_worker.isRunning():

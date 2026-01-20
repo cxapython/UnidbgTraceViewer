@@ -321,7 +321,7 @@ class EnhancedCodeEdit(QtWidgets.QPlainTextEdit):
             self.lineClicked.emit(line_num)
             
             # 检查是否点击了地址
-            cursor.select(QtGui.QTextCursor.WordUnderCursor)
+            cursor.select(QtGui.QTextCursor.SelectionType.WordUnderCursor)
             word = cursor.selectedText()
             if word.startswith('0x'):
                 try:
